@@ -277,7 +277,14 @@ void set_jvmci_specific_flags() {
     if (FLAG_IS_DEFAULT(TypeProfileLevel)) {
       FLAG_SET_DEFAULT(TypeProfileLevel, 0);
     }
-  }
+
+    // SVM compiled code requires more stack space
+    if (JVMCIGlobals::java_mode() == JVMCIGlobals::SharedLibrary) {
+      if (FLAG_IS_DEFAULT(CompilerThreadStackSize)) {
+        FLAG_SET_DEFAULT(CompilerThreadStackSize, 2*M);
+      }
+    }
+  } // UseJVMCICompiler
 }
 #endif // INCLUDE_JVMCI
 
@@ -392,6 +399,9 @@ void CompilerConfig::ergo_initialize() {
   // Check that JVMCI compiler supports selested GC.
   // Should be done after GCConfig::initialize() was called.
   JVMCIGlobals::check_jvmci_supported_gc();
+
+  // Do JVMCI specific settings
+  JVMCIGlobals::init_java_mode_from_flags();
   set_jvmci_specific_flags();
 #endif
 

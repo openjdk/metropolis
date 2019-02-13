@@ -22,6 +22,7 @@
  */
 package jdk.vm.ci.hotspot;
 
+import java.util.List;
 import java.util.Set;
 
 import jdk.vm.ci.code.CompilationRequest;
@@ -29,6 +30,7 @@ import jdk.vm.ci.common.JVMCIError;
 import jdk.vm.ci.hotspot.HotSpotJVMCIRuntime.Option;
 import jdk.vm.ci.runtime.JVMCICompiler;
 import jdk.vm.ci.runtime.JVMCICompilerFactory;
+import jdk.vm.ci.common.NativeImageReinitialize;
 import jdk.vm.ci.runtime.JVMCIRuntime;
 import jdk.vm.ci.services.JVMCIPermission;
 import jdk.vm.ci.services.JVMCIServiceLocator;
@@ -61,7 +63,7 @@ final class HotSpotJVMCICompilerConfig {
     /**
      * Factory of the selected system compiler.
      */
-    private static JVMCICompilerFactory compilerFactory;
+    @NativeImageReinitialize private static JVMCICompilerFactory compilerFactory;
 
     /**
      * Gets the selected system compiler factory.
@@ -78,7 +80,7 @@ final class HotSpotJVMCICompilerConfig {
                 if (compilerName.isEmpty() || compilerName.equals("null")) {
                     factory = new DummyCompilerFactory();
                 } else {
-                    for (JVMCICompilerFactory f : JVMCIServiceLocator.getProviders(JVMCICompilerFactory.class)) {
+                    for (JVMCICompilerFactory f : getJVMCICompilerFactories()) {
                         if (f.getCompilerName().equals(compilerName)) {
                             factory = f;
                         }
@@ -89,7 +91,7 @@ final class HotSpotJVMCICompilerConfig {
                 }
             } else {
                 // Auto select a single available compiler
-                for (JVMCICompilerFactory f : JVMCIServiceLocator.getProviders(JVMCICompilerFactory.class)) {
+                for (JVMCICompilerFactory f : getJVMCICompilerFactories()) {
                     if (factory == null) {
                         openJVMCITo(f.getClass().getModule());
                         factory = f;
@@ -123,5 +125,9 @@ final class HotSpotJVMCICompilerConfig {
                 }
             }
         }
+    }
+
+    private static List<JVMCICompilerFactory> getJVMCICompilerFactories() {
+        return JVMCIServiceLocator.getProviders(JVMCICompilerFactory.class);
     }
 }

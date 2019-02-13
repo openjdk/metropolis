@@ -214,6 +214,7 @@ module java.base {
         java.sql,
         java.sql.rowset,
         jdk.dynalink,
+        jdk.internal.vm.ci,
         jdk.scripting.nashorn,
         jdk.unsupported;
     exports jdk.internal.vm to

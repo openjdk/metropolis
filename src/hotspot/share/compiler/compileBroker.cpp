@@ -70,7 +70,7 @@
 #if INCLUDE_JVMCI
 #include "jvmci/jvmciCompiler.hpp"
 #include "jvmci/jvmciRuntime.hpp"
-#include "jvmci/jvmciJavaClasses.hpp"
+#include "jvmci/jvmciEnv.hpp"
 #include "runtime/vframe.hpp"
 #endif
 #ifdef COMPILER2
@@ -1089,14 +1089,14 @@ void CompileBroker::compile_method_base(const methodHandle& method,
 
         // Don't allow blocking compilation requests to JVMCI
         // if JVMCI itself is not yet initialized
-        if (!JVMCIRuntime::is_HotSpotJVMCIRuntime_initialized() && compiler(comp_level)->is_jvmci()) {
+        if (!JVMCI::is_compiler_initialized() && compiler(comp_level)->is_jvmci()) {
           blocking = false;
         }
 
         // Don't allow blocking compilation requests if we are in JVMCIRuntime::shutdown
         // to avoid deadlock between compiler thread(s) and threads run at shutdown
         // such as the DestroyJavaVM thread.
-        if (JVMCIRuntime::shutdown_called()) {
+        if (JVMCI::shutdown_called()) {
           blocking = false;
         }
       }
@@ -1198,7 +1198,7 @@ nmethod* CompileBroker::compile_method(const methodHandle& method, int osr_bci,
   }
 
 #if INCLUDE_JVMCI
-  if (comp->is_jvmci() && !JVMCIRuntime::can_initialize_JVMCI()) {
+  if (comp->is_jvmci() && !JVMCI::can_initialize_JVMCI()) {
     return NULL;
   }
 #endif
@@ -1609,6 +1609,7 @@ bool CompileBroker::init_compiler_runtime() {
 
   {
     // Must switch to native to allocate ci_env
+    HandleMark hm(thread);
     ThreadToNativeFromVM ttn(thread);
     ciEnv ci_env(NULL, system_dictionary_modification_counter);
     // Cache Jvmti state
@@ -2064,20 +2065,24 @@ void CompileBroker::invoke_compiler_on_method(CompileTask* task) {
 
     // Skip redefined methods
     if (target_handle->is_old()) {
-        failure_reason = "redefined method";
-        retry_message = "not retryable";
-        compilable = ciEnv::MethodCompilable_never;
+      failure_reason = "redefined method";
+      retry_message = "not retryable";
+      compilable = ciEnv::MethodCompilable_never;
     } else {
-        JVMCIEnv env(task, system_dictionary_modification_counter);
-        methodHandle method(thread, target_handle);
-        jvmci->compile_method(method, osr_bci, &env);
+      JVMCICompileState compile_state(task, system_dictionary_modification_counter);
+      JVMCIEnv env(&compile_state, __FILE__, __LINE__);
+      methodHandle method(thread, target_handle);
+      env.runtime()->compile_method(&env, jvmci, method, osr_bci);
 
-        failure_reason = env.failure_reason();
-        failure_reason_on_C_heap = env.failure_reason_on_C_heap();
-        if (!env.retryable()) {
-          retry_message = "not retryable";
-          compilable = ciEnv::MethodCompilable_not_at_tier;
-        }
+      failure_reason = compile_state.failure_reason();
+      failure_reason_on_C_heap = compile_state.failure_reason_on_C_heap();
+      if (!compile_state.retryable()) {
+        retry_message = "not retryable";
+        compilable = ciEnv::MethodCompilable_not_at_tier;
+      }
+      if (task->code() == NULL) {
+        assert(failure_reason != NULL, "must specify failure_reason");
+      }
     }
     post_compile(thread, task, task->code() != NULL, NULL, compilable, failure_reason);
     if (event.should_commit()) {
@@ -2087,6 +2092,7 @@ void CompileBroker::invoke_compiler_on_method(CompileTask* task) {
   } else
 #endif // INCLUDE_JVMCI
   {
+    HandleMark hm(thread);
     NoHandleMark  nhm;
     ThreadToNativeFromVM ttn(thread);
 

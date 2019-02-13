@@ -34,7 +34,7 @@
 #include "code/scopeDesc.hpp"
 #include "oops/method.inline.hpp"
 #if INCLUDE_JVMCI
-#include "jvmci/jvmciRuntime.hpp"
+#include "jvmci/jvmci.hpp"
 #endif
 
 #ifdef TIERED
@@ -831,7 +831,7 @@ CompLevel TieredThresholdPolicy::call_event(Method* method, CompLevel cur_level,
   }
 #if INCLUDE_JVMCI
   if (UseJVMCICompiler) {
-    next_level = JVMCIRuntime::adjust_comp_level(method, false, next_level, thread);
+    next_level = JVMCI::adjust_comp_level(method, false, next_level, thread);
   }
 #endif
   return next_level;
@@ -850,7 +850,7 @@ CompLevel TieredThresholdPolicy::loop_event(Method* method, CompLevel cur_level,
   }
 #if INCLUDE_JVMCI
   if (UseJVMCICompiler) {
-    next_level = JVMCIRuntime::adjust_comp_level(method, true, next_level, thread);
+    next_level = JVMCI::adjust_comp_level(method, true, next_level, thread);
   }
 #endif
   return next_level;

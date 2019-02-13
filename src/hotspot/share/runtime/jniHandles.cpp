@@ -24,6 +24,9 @@
 
 #include "precompiled.hpp"
 #include "gc/shared/oopStorage.inline.hpp"
+#if INCLUDE_JVMCI
+#include "jvmci/jvmci.hpp"
+#endif
 #include "logging/log.hpp"
 #include "memory/iterator.hpp"
 #include "oops/access.inline.hpp"
@@ -121,7 +124,6 @@ jobject JNIHandles::make_global(Handle obj, AllocFailType alloc_failmode) {
   return res;
 }
 
-
 jobject JNIHandles::make_weak_global(Handle obj, AllocFailType alloc_failmode) {
   assert(!Universe::heap()->is_gc_active(), "can't extend the root set during GC");
   assert(!current_thread_in_native(), "must not be in native");
@@ -187,6 +189,9 @@ void JNIHandles::destroy_weak_global(jobject handle) {
 
 void JNIHandles::oops_do(OopClosure* f) {
   global_handles()->oops_do(f);
+#if INCLUDE_JVMCI
+  JVMCI::oops_do(f);
+#endif
 }
 
 

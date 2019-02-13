@@ -123,6 +123,20 @@ void CallInfo::set_common(Klass* resolved_klass,
                           CallKind kind,
                           int index,
                           TRAPS) {
+  if (resolved_method->signature() != selected_method->signature()) {
+    tty->print_cr("resolved_class:%s, resolved_method:%s, resolved_method_holder:%s",
+            (resolved_klass == NULL ? "<NULL>" : resolved_klass->internal_name()),
+            Method::name_and_sig_as_C_string(resolved_klass,
+                                             resolved_method->name(),
+                                             resolved_method->signature()),
+            resolved_method->method_holder()->internal_name());
+    tty->print_cr("selected_class:%s, selected_method:%s, selected_method_holder:%s",
+            (selected_klass == NULL ? "<NULL>" : selected_klass->internal_name()),
+            Method::name_and_sig_as_C_string(selected_klass,
+                                             selected_method->name(),
+                                             selected_method->signature()),
+            selected_method->method_holder()->internal_name());
+  }
   assert(resolved_method->signature() == selected_method->signature(), "signatures must correspond");
   _resolved_klass  = resolved_klass;
   _selected_klass  = selected_klass;

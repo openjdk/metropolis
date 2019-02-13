@@ -88,6 +88,9 @@ class ThreadClosure;
 class ICRefillVerifier;
 class IdealGraphPrinter;
 
+class JVMCIEnv;
+class JVMCIPrimitiveArray;
+
 class Metadata;
 class ResourceArea;
 
@@ -1118,7 +1121,7 @@ class JavaThread: public Thread {
   // Specifies if the DeoptReason for the last uncommon trap was Reason_transfer_to_interpreter
   bool      _pending_transfer_to_interpreter;
 
-  // Guard for re-entrant call to JVMCIRuntime::adjust_comp_level
+  // Guard for re-entrant call to JVMCI::adjust_comp_level
   bool      _adjusting_comp_level;
 
   // True if in a runtime call from compiled code that will deoptimize
@@ -1144,7 +1147,7 @@ class JavaThread: public Thread {
 
  public:
   static jlong* _jvmci_old_thread_counters;
-  static void collect_counters(typeArrayOop array);
+  static void collect_counters(JVMCIEnv* JVMCIENV, JVMCIPrimitiveArray array);
  private:
 #endif // INCLUDE_JVMCI
 

@@ -152,6 +152,11 @@ Mutex*   DCmdFactory_lock             = NULL;
 Mutex*   NMTQuery_lock                = NULL;
 #endif
 
+#if INCLUDE_JVMCI
+Monitor* JVMCI_lock                   = NULL;
+#endif
+
+
 #define MAX_NUM_MUTEX 128
 static Monitor * _mutex_array[MAX_NUM_MUTEX];
 static int _num_mutex;
@@ -341,6 +346,10 @@ void mutex_init() {
   def(DCmdFactory_lock             , PaddedMutex  , leaf,        true,  Monitor::_safepoint_check_never);
 #if INCLUDE_NMT
   def(NMTQuery_lock                , PaddedMutex  , max_nonleaf, false, Monitor::_safepoint_check_always);
+#endif
+
+#if INCLUDE_JVMCI
+  def(JVMCI_lock                   , PaddedMonitor, nonleaf+2,   true,  Monitor::_safepoint_check_always);
 #endif
 }
 

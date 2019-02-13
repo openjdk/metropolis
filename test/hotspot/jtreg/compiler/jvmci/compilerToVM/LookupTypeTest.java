@@ -93,6 +93,7 @@ public class LookupTypeTest {
             metaspaceKlass = CompilerToVMHelper.lookupType(tcase.className,
                     tcase.accessing, tcase.resolve);
         } catch (Throwable t) {
+            t.printStackTrace();
             Asserts.assertNotNull(tcase.expectedException,
                     "Assumed no exception, but got " + t);
             Asserts.assertFalse(tcase.isPositive,

@@ -26,6 +26,7 @@
  * @bug 8136421
  * @requires vm.jvmci
  * @library /test/lib /
+ * @ignore Not suported JVMCI API
  * @modules java.base/jdk.internal.misc:open
  * @modules jdk.internal.vm.ci/jdk.vm.ci.hotspot:open
  *          jdk.internal.vm.ci/jdk.vm.ci.runtime

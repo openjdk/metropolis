@@ -46,6 +46,9 @@
 #include "gc/shared/space.hpp"
 #include "gc/shared/strongRootsScope.hpp"
 #include "gc/shared/weakProcessor.hpp"
+#if INCLUDE_JVMCI
+#include "jvmci/jvmci.hpp"
+#endif
 #include "oops/instanceRefKlass.hpp"
 #include "oops/oop.inline.hpp"
 #include "prims/jvmtiExport.hpp"
@@ -234,6 +237,10 @@ void GenMarkSweep::mark_sweep_phase1(bool clear_all_softrefs) {
 
     // Unload nmethods.
     CodeCache::do_unloading(&is_alive, purged_class);
+
+#if INCLUDE_JVMCI
+    JVMCI::do_unloading(&is_alive, purged_class);
+#endif
 
     // Prune dead klasses from subklass/sibling/implementor lists.
     Klass::clean_weak_klass_links(purged_class);

@@ -355,6 +355,7 @@ void CompileTask::log_task_done(CompileLog* log) {
   ResourceMark rm(thread);
 
   if (!_is_success) {
+    assert(_failure_reason != NULL, "missing");
     const char* reason = _failure_reason != NULL ? _failure_reason : "unknown";
     log->elem("failure reason='%s'", reason);
   }

@@ -188,12 +188,6 @@
   static_field(java_lang_Class,                _klass_offset,                                 int)                                   \
   static_field(java_lang_Class,                _array_klass_offset,                           int)                                   \
                                                                                                                                      \
-  nonstatic_field(JVMCIEnv,                    _task,                                         CompileTask*)                          \
-  nonstatic_field(JVMCIEnv,                    _jvmti_can_hotswap_or_post_breakpoint,         jbyte)                                 \
-  nonstatic_field(JVMCIEnv,                    _jvmti_can_access_local_variables,             jbyte)                                 \
-  nonstatic_field(JVMCIEnv,                    _jvmti_can_post_on_exceptions,                 jbyte)                                 \
-  nonstatic_field(JVMCIEnv,                    _jvmti_can_pop_frame,                          jbyte)                                 \
-                                                                                                                                     \
   nonstatic_field(InvocationCounter,           _counter,                                      unsigned int)                          \
                                                                                                                                      \
   nonstatic_field(Klass,                       _secondary_super_cache,                        Klass*)                                \
@@ -208,6 +202,7 @@
   nonstatic_field(Klass,                       _java_mirror,                                  OopHandle)                             \
   nonstatic_field(Klass,                       _modifier_flags,                               jint)                                  \
   nonstatic_field(Klass,                       _access_flags,                                 AccessFlags)                           \
+  nonstatic_field(Klass,                       _class_loader_data,                            ClassLoaderData*)                      \
                                                                                                                                      \
   nonstatic_field(LocalVariableTableElement,   start_bci,                                     u2)                                    \
   nonstatic_field(LocalVariableTableElement,   length,                                        u2)                                    \
@@ -400,6 +395,7 @@
   declare_preprocessor_constant("JVM_ACC_ANNOTATION", JVM_ACC_ANNOTATION) \
   declare_preprocessor_constant("JVM_ACC_ENUM", JVM_ACC_ENUM)             \
   declare_preprocessor_constant("JVM_ACC_SYNTHETIC", JVM_ACC_SYNTHETIC)   \
+  declare_preprocessor_constant("JVM_ACC_INTERFACE", JVM_ACC_INTERFACE)   \
                                                                           \
   declare_constant(JVM_CONSTANT_Utf8)                                     \
   declare_constant(JVM_CONSTANT_Unicode)                                  \
@@ -541,11 +537,11 @@
   declare_constant(JumpData::taken_off_set)                               \
   declare_constant(JumpData::displacement_off_set)                        \
                                                                           \
-  declare_constant(JVMCIEnv::ok)                                          \
-  declare_constant(JVMCIEnv::dependencies_failed)                         \
-  declare_constant(JVMCIEnv::dependencies_invalid)                        \
-  declare_constant(JVMCIEnv::cache_full)                                  \
-  declare_constant(JVMCIEnv::code_too_large)                              \
+  declare_preprocessor_constant("JVMCIEnv::ok",                   JVMCI::ok)                      \
+  declare_preprocessor_constant("JVMCIEnv::dependencies_failed",  JVMCI::dependencies_failed)     \
+  declare_preprocessor_constant("JVMCIEnv::dependencies_invalid", JVMCI::dependencies_invalid)    \
+  declare_preprocessor_constant("JVMCIEnv::cache_full",           JVMCI::cache_full)              \
+  declare_preprocessor_constant("JVMCIEnv::code_too_large",       JVMCI::code_too_large)          \
   declare_constant(JVMCIRuntime::none)                                    \
   declare_constant(JVMCIRuntime::by_holder)                               \
   declare_constant(JVMCIRuntime::by_full_signature)                       \

@@ -27,7 +27,11 @@
 #include "jvmci/jvmci_globals.hpp"
 #include "gc/shared/gcConfig.hpp"
 #include "utilities/defaultStream.hpp"
+#include "utilities/ostream.hpp"
 #include "runtime/globals_extension.hpp"
+
+JVMCIGlobals::JavaMode JVMCIGlobals::_java_mode = HotSpot;
+fileStream* JVMCIGlobals::_jni_config_file = NULL;
 
 JVMCI_FLAGS(MATERIALIZE_DEVELOPER_FLAG, \
             MATERIALIZE_PD_DEVELOPER_FLAG, \
@@ -98,6 +102,11 @@ bool JVMCIGlobals::check_jvmci_flags_are_consistent() {
   CHECK_NOT_SET(MethodProfileWidth,           EnableJVMCI)
   CHECK_NOT_SET(JVMCIPrintProperties,         EnableJVMCI)
   CHECK_NOT_SET(TraceUncollectedSpeculations, EnableJVMCI)
+  CHECK_NOT_SET(UseJVMCINativeLibrary,        EnableJVMCI)
+  CHECK_NOT_SET(JVMCILibPath,                 EnableJVMCI)
+  CHECK_NOT_SET(JVMCILibArgs,                 EnableJVMCI)
+  CHECK_NOT_SET(JVMCILibArgsSep,              EnableJVMCI)
+  CHECK_NOT_SET(JVMCILibDumpJNIConfig,        EnableJVMCI)
 
 #ifndef PRODUCT
 #define JVMCI_CHECK4(type, name, value, doc) assert(name##checked, #name " flag not checked");
@@ -110,10 +119,27 @@ bool JVMCIGlobals::check_jvmci_flags_are_consistent() {
 #undef JVMCI_CHECK3
 #undef JVMCI_CHECK4
 #undef JVMCI_FLAG_CHECKED
-#endif
+#endif // PRODUCT
 #undef CHECK_NOT_SET
+
+  if (JVMCILibDumpJNIConfig != NULL) {
+    _jni_config_file = new(ResourceObj::C_HEAP, mtInternal) fileStream(JVMCILibDumpJNIConfig);
+    if (_jni_config_file == NULL || !_jni_config_file->is_open()) {
+      jio_fprintf(defaultStream::error_stream(),
+          "Could not open file for dumping JVMCI shared library JNI config: %s\n", JVMCILibDumpJNIConfig);
+      return false;
+    }
+  }
+
+  if (strlen(JVMCILibArgsSep) != 1) {
+    jio_fprintf(defaultStream::error_stream(),
+        "Length of -XX:JVMCILibArgsSep value must be 1: \"%s\"\n", JVMCILibArgsSep);
+    return false;
+  }
+
   return true;
 }
+
 void JVMCIGlobals::check_jvmci_supported_gc() {
   if (EnableJVMCI) {
     // Check if selected GC is supported by JVMCI and Java compiler
@@ -121,6 +147,21 @@ void JVMCIGlobals::check_jvmci_supported_gc() {
       vm_exit_during_initialization("JVMCI Compiler does not support selected GC", GCConfig::hs_err_name());
       FLAG_SET_DEFAULT(EnableJVMCI, false);
       FLAG_SET_DEFAULT(UseJVMCICompiler, false);
+    }
+  }
+}
+
+void JVMCIGlobals::init_java_mode_from_flags() {
+  if (EnableJVMCI) {
+    if (!UseJVMCINativeLibrary) {
+      _java_mode = HotSpot;
+    } else {
+      _java_mode = SharedLibrary;
+
+      // Make JVMCI initialization eager if loaded from a shared library
+      if (FLAG_IS_DEFAULT(EagerJVMCI)) {
+        FLAG_SET_DEFAULT(EagerJVMCI, true);
+      }
     }
   }
 }

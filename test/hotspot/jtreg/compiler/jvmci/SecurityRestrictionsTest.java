@@ -172,12 +172,8 @@ public class SecurityRestrictionsTest {
                 }
             };
             Utils.runAndCheckException(() -> {
-                try {
-                    // CompilerToVM::<cinit> provokes CompilerToVM::<init>
-                    Class.forName("jdk.vm.ci.hotspot.CompilerToVMHelper");
-                } catch (ClassNotFoundException e) {
-                    throw new Error("TESTBUG : " + e, e);
-                }
+                // CompilerToVM::<cinit> provokes CompilerToVM::<init>
+                Class.forName("jdk.vm.ci.hotspot.CompilerToVMHelper");
             }, exceptionCheck);
         }
 

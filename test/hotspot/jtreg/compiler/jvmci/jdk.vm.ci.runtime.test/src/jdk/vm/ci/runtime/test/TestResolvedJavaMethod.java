@@ -25,6 +25,7 @@
  * @test
  * @requires vm.jvmci
  * @library ../../../../../
+ * @ignore Not suported JVMCI API
  * @modules jdk.internal.vm.ci/jdk.vm.ci.meta
  *          jdk.internal.vm.ci/jdk.vm.ci.runtime
  *          java.base/jdk.internal.misc

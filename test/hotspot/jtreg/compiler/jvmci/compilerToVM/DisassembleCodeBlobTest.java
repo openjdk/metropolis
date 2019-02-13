@@ -69,7 +69,7 @@ public class DisassembleCodeBlobTest {
 
     private void checkNull() {
         Utils.runAndCheckException(
-                () -> CompilerToVMHelper.disassembleCodeBlob(null),
+                () -> { CompilerToVMHelper.disassembleCodeBlob(null); },
                 NullPointerException.class);
     }
 

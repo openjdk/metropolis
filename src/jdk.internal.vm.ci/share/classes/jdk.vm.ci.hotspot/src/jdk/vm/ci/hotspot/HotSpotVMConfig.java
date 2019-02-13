@@ -70,16 +70,21 @@ class HotSpotVMConfig extends HotSpotVMConfigAccess {
 
     final int objectAlignment = getFlag("ObjectAlignmentInBytes", Integer.class);
 
+    final int hubOffset = getFieldOffset("oopDesc::_metadata._klass", Integer.class, "Klass*");
+
     final int prototypeMarkWordOffset = getFieldOffset("Klass::_prototype_header", Integer.class, "markOop");
     final int subklassOffset = getFieldOffset("Klass::_subklass", Integer.class, "Klass*");
+    final int superOffset = getFieldOffset("Klass::_super", Integer.class, "Klass*");
     final int nextSiblingOffset = getFieldOffset("Klass::_next_sibling", Integer.class, "Klass*");
     final int superCheckOffsetOffset = getFieldOffset("Klass::_super_check_offset", Integer.class, "juint");
     final int secondarySuperCacheOffset = getFieldOffset("Klass::_secondary_super_cache", Integer.class, "Klass*");
 
+    final int classLoaderDataOffset = getFieldOffset("Klass::_class_loader_data", Integer.class, "ClassLoaderData*");
+
     /**
      * The offset of the _java_mirror field (of type {@link Class}) in a Klass.
      */
-    final int classMirrorHandleOffset = getFieldOffset("Klass::_java_mirror", Integer.class, "OopHandle");
+    final int javaMirrorOffset = getFieldOffset("Klass::_java_mirror", Integer.class, "OopHandle");
 
     final int klassAccessFlagsOffset = getFieldOffset("Klass::_access_flags", Integer.class, "AccessFlags");
     final int klassLayoutHelperOffset = getFieldOffset("Klass::_layout_helper", Integer.class, "jint");
@@ -131,6 +136,7 @@ class HotSpotVMConfig extends HotSpotVMConfigAccess {
     final int jvmAccBridge = getConstant("JVM_ACC_BRIDGE", Integer.class);
     final int jvmAccVarargs = getConstant("JVM_ACC_VARARGS", Integer.class);
     final int jvmAccEnum = getConstant("JVM_ACC_ENUM", Integer.class);
+    final int jvmAccInterface = getConstant("JVM_ACC_INTERFACE", Integer.class);
 
     // This is only valid on AMD64.
     final int runtimeCallStackSize = getConstant("frame::arg_reg_save_area_bytes", Integer.class, osArch.equals("amd64") ? null : 0);

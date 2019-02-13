@@ -50,6 +50,9 @@
 #include "gc/shared/referenceProcessorPhaseTimes.hpp"
 #include "gc/shared/spaceDecorator.hpp"
 #include "gc/shared/weakProcessor.hpp"
+#if INCLUDE_JVMCI
+#include "jvmci/jvmci.hpp"
+#endif
 #include "logging/log.hpp"
 #include "oops/oop.inline.hpp"
 #include "runtime/biasedLocking.hpp"
@@ -561,6 +564,10 @@ void PSMarkSweep::mark_sweep_phase1(bool clear_all_softrefs) {
 
     // Unload nmethods.
     CodeCache::do_unloading(is_alive_closure(), purged_class);
+
+#if INCLUDE_JVMCI
+    JVMCI::do_unloading(is_alive_closure(), purged_class);
+#endif
 
     // Prune dead klasses from subklass/sibling/implementor lists.
     Klass::clean_weak_klass_links(purged_class);
