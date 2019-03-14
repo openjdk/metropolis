@@ -1501,8 +1501,7 @@ void CMSCollector::acquire_control_and_collect(bool full,
   // Has the GC time limit been exceeded?
   size_t max_eden_size = _young_gen->max_eden_size();
   GCCause::Cause gc_cause = heap->gc_cause();
-  size_policy()->check_gc_overhead_limit(_young_gen->used(),
-                                         _young_gen->eden()->used(),
+  size_policy()->check_gc_overhead_limit(_young_gen->eden()->used(),
                                          _cmsGen->max_capacity(),
                                          max_eden_size,
                                          full,
@@ -2764,7 +2763,7 @@ CMSPhaseAccounting::CMSPhaseAccounting(CMSCollector *collector,
 CMSPhaseAccounting::~CMSPhaseAccounting() {
   _collector->gc_timer_cm()->register_gc_concurrent_end();
   _collector->stopTimer();
-  log_debug(gc)("Concurrent active time: %.3fms", TimeHelper::counter_to_seconds(_collector->timerTicks()));
+  log_debug(gc)("Concurrent active time: %.3fms", TimeHelper::counter_to_millis(_collector->timerTicks()));
   log_trace(gc)(" (CMS %s yielded %d times)", _title, _collector->yields());
 }
 

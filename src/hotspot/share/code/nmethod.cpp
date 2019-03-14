@@ -1358,6 +1358,8 @@ void nmethod::flush() {
   assert(_jvmci_nmethod_data == NULL, "should have been nulled out when transitioned to zombie");
 #endif
 
+  Universe::heap()->flush_nmethod(this);
+
   CodeBlob::flush();
   CodeCache::free(this);
 }

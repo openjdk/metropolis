@@ -1171,7 +1171,7 @@ InstanceKlass* SystemDictionary::load_shared_boot_class(Symbol* class_name,
                                                         TRAPS) {
   InstanceKlass* ik = SystemDictionaryShared::find_builtin_class(class_name);
   if (ik != NULL && ik->is_shared_boot_class()) {
-    return load_shared_class(ik, Handle(), Handle(), THREAD);
+    return load_shared_class(ik, Handle(), Handle(), NULL, THREAD);
   }
   return NULL;
 }
@@ -1271,7 +1271,9 @@ bool SystemDictionary::is_shared_class_visible(Symbol* class_name,
 
 InstanceKlass* SystemDictionary::load_shared_class(InstanceKlass* ik,
                                                    Handle class_loader,
-                                                   Handle protection_domain, TRAPS) {
+                                                   Handle protection_domain,
+                                                   const ClassFileStream *cfs,
+                                                   TRAPS) {
 
   if (ik != NULL) {
     Symbol* class_name = ik->name();
@@ -1318,7 +1320,7 @@ InstanceKlass* SystemDictionary::load_shared_class(InstanceKlass* ik,
     }
 
     InstanceKlass* new_ik = KlassFactory::check_shared_class_file_load_hook(
-        ik, class_name, class_loader, protection_domain, CHECK_NULL);
+        ik, class_name, class_loader, protection_domain, cfs, CHECK_NULL);
     if (new_ik != NULL) {
       // The class is changed by CFLH. Return the new class. The shared class is
       // not used.
@@ -2104,7 +2106,7 @@ void SystemDictionary::check_constraints(unsigned int d_hash,
         ss.print(" wants to load %s %s.",
                  k->external_kind(), k->external_name());
         Klass *existing_klass = constraints()->find_constrained_klass(name, class_loader);
-        if (existing_klass->class_loader() != class_loader()) {
+        if (existing_klass != NULL && existing_klass->class_loader() != class_loader()) {
           ss.print(" A different %s with the same name was previously loaded by %s. (%s)",
                    existing_klass->external_kind(),
                    existing_klass->class_loader_data()->loader_name_and_id(),
@@ -2449,7 +2451,6 @@ methodHandle SystemDictionary::find_method_handle_invoker(Klass* klass,
                                                           Symbol* signature,
                                                           Klass* accessing_klass,
                                                           Handle *appendix_result,
-                                                          Handle *method_type_result,
                                                           TRAPS) {
   methodHandle empty;
   assert(THREAD->can_call_java() ,"");
@@ -2482,7 +2483,6 @@ methodHandle SystemDictionary::find_method_handle_invoker(Klass* klass,
                          vmSymbols::linkMethod_signature(),
                          &args, CHECK_(empty));
   Handle mname(THREAD, (oop) result.get_jobject());
-  (*method_type_result) = method_type;
   return unpack_method_and_appendix(mname, accessing_klass, appendix_box, appendix_result, THREAD);
 }
 
@@ -2801,7 +2801,6 @@ methodHandle SystemDictionary::find_dynamic_call_site_invoker(Klass* caller,
                                                               Symbol* name,
                                                               Symbol* type,
                                                               Handle *appendix_result,
-                                                              Handle *method_type_result,
                                                               TRAPS) {
   methodHandle empty;
   Handle bsm, info;
@@ -2843,7 +2842,6 @@ methodHandle SystemDictionary::find_dynamic_call_site_invoker(Klass* caller,
                          vmSymbols::linkCallSite_signature(),
                          &args, CHECK_(empty));
   Handle mname(THREAD, (oop) result.get_jobject());
-  (*method_type_result) = method_type;
   return unpack_method_and_appendix(mname, caller, appendix_box, appendix_result, THREAD);
 }
 
