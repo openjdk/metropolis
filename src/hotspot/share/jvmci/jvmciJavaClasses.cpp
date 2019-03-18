@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2018, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2019, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -23,6 +23,7 @@
 
 #include "precompiled.hpp"
 #include "classfile/symbolTable.hpp"
+#include "interpreter/linkResolver.hpp"
 #include "jvmci/jvmciEnv.hpp"
 #include "jvmci/jvmciJavaClasses.hpp"
 #include "jvmci/jvmciRuntime.hpp"
@@ -30,19 +31,7 @@
 #include "oops/oop.inline.hpp"
 #include "runtime/jniHandles.inline.hpp"
 #include "runtime/fieldDescriptor.inline.hpp"
-/*
-#include "classfile/systemDictionary.hpp"
-#include "oops/instanceMirrorKlass.hpp"
-#include "utilities/exceptions.hpp"
-#include "jvmci/jvmciEnv.hpp"
-#include "jvmci/jvmciJavaClasses.hpp"
-#include "jvmci/jvmciRuntime.hpp"
-#include "compiler/compileBroker.hpp"
-#include "runtime/jniHandles.hpp"
-#include "runtime/javaCalls.hpp"
-#include "classfile/symbolTable.hpp"
-#include "memory/oopFactory.hpp"
-*/
+
 // ------------------------------------------------------------------
 
 /**
@@ -76,8 +65,27 @@ void HotSpotJVMCI::compute_offset(int &dest_offset, Klass* klass, const char* na
   }
 }
 
+#ifndef PRODUCT
+static void check_resolve_method(const char* call_type, Klass* resolved_klass, Symbol* method_name, Symbol* method_signature, TRAPS) {
+  methodHandle method;
+  LinkInfo link_info(resolved_klass, method_name, method_signature, NULL, LinkInfo::skip_access_check);
+  if (strcmp(call_type, "call_static") == 0) {
+    method = LinkResolver::resolve_static_call_or_null(link_info);
+  } else if (strcmp(call_type, "call_virtual") == 0) {
+    method = LinkResolver::resolve_virtual_call_or_null(resolved_klass, link_info);
+  } else if (strcmp(call_type, "call_special") == 0) {
+    method = LinkResolver::resolve_special_call_or_null(link_info);
+  } else {
+    fatal("Unknown or unsupported call type: %s", call_type);
+  }
+  if (method.is_null()) {
+    fatal("Could not resolve %s.%s%s", resolved_klass->external_name(), method_name->as_C_string(), method_signature->as_C_string());
+  }
+}
+#endif
 
 jclass JNIJVMCI::_box_classes[T_CONFLICT+1];
+jclass JNIJVMCI::_byte_array;
 jfieldID JNIJVMCI::_box_fields[T_CONFLICT+1];
 jmethodID JNIJVMCI::_box_constructors[T_CONFLICT+1];
 jmethodID JNIJVMCI::_Class_getName_method;
@@ -104,9 +112,17 @@ jmethodID JNIJVMCI::_HotSpotResolvedPrimitiveType_fromMetaspace_method;
 #define STATIC_OBJECT_FIELD(className, name, signature) FIELD(className, name, signature, true)
 #define STATIC_INT_FIELD(className, name) FIELD(className, name, "I", true)
 #define STATIC_BOOLEAN_FIELD(className, name) FIELD(className, name, "Z", true)
+#ifdef PRODUCT
 #define METHOD(jniCallType, jniGetMethod, hsCallType, returnType, className, methodName, signatureSymbolName, args)
 #define CONSTRUCTOR(className, signature)
-
+#else
+#define METHOD(jniCallType, jniGetMethod, hsCallType, returnType, className, methodName, signatureSymbolName, args) \
+  check_resolve_method(#hsCallType, k, vmSymbols::methodName##_name(), vmSymbols::signatureSymbolName(), CHECK);
+#define CONSTRUCTOR(className, signature) { \
+  TempNewSymbol sig = SymbolTable::new_symbol(signature, CHECK); \
+  check_resolve_method("call_special", k, vmSymbols::object_initializer_name(), sig, CHECK); \
+  }
+#endif
 /**
  * Computes and initializes the offsets used by HotSpotJVMCI.
  */
@@ -376,6 +392,16 @@ void JNIJVMCI::initialize_ids(JNIEnv* env) {
   }
 
   BOX_CLASSES(DO_BOX_CLASS);
+
+  if (JVMCILibDumpJNIConfig == NULL) {
+    _byte_array = env->FindClass("[B");
+    JVMCI_EXCEPTION_CHECK(env, "FindClass([B)");
+    _byte_array = (jclass) env->NewGlobalRef(_byte_array);
+    assert(_byte_array != NULL, "uninitialized");
+  } else {
+    fileStream* st = JVMCIGlobals::get_jni_config_file();
+    st->print_cr("class [B");
+  }
 
 #define DUMP_ALL_NATIVE_METHODS(class_symbol) do {                                                                  \
   current_class_name = class_symbol->as_C_string();                                                                 \

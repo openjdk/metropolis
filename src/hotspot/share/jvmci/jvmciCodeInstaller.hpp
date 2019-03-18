@@ -219,8 +219,15 @@ public:
 #if INCLUDE_AOT
   JVMCI::CodeInstallResult gather_metadata(JVMCIObject target, JVMCIObject compiled_code, CodeMetadata& metadata, JVMCI_TRAPS);
 #endif
-  JVMCI::CodeInstallResult install(JVMCICompiler* compiler, JVMCIObject target, JVMCIObject compiled_code,
-                                   CodeBlob*& cb, JVMCIObject installed_code, JVMCIObject speculation_log, JVMCI_TRAPS);
+  JVMCI::CodeInstallResult install(JVMCICompiler* compiler,
+                                   JVMCIObject target,
+                                   JVMCIObject compiled_code,
+                                   CodeBlob*& cb,
+                                   JVMCIObject installed_code,
+                                   FailedSpeculation** failed_speculations,
+                                   char* speculations,
+                                   int speculations_len,
+                                   JVMCI_TRAPS);
 
   JVMCIEnv* jvmci_env() { return _jvmci_env; }
   JVMCIRuntime* runtime() { return _jvmci_env->runtime(); }

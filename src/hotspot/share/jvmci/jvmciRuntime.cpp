@@ -963,199 +963,97 @@ void JVMCIRuntime::call_getCompiler(TRAPS) {
   JVMCIENV->call_HotSpotJVMCIRuntime_getCompiler(jvmciRuntime, JVMCI_CHECK);
 }
 
-JVMCINMethodData* volatile JVMCINMethodData::_for_release = NULL;
-
-JVMCINMethodData::JVMCINMethodData(JVMCIEnv* jvmciEnv, JVMCIObject nmethod_mirror, JVMCIObject speculation_log, bool triggers_invalidation) {
-  _next = NULL;
-  _triggers_invalidation = triggers_invalidation;
-  _speculation_log = jvmciEnv->make_weak(speculation_log);
-  if (jvmciEnv->is_hotspot()) {
-    _nmethod_mirror = jvmciEnv->make_weak(nmethod_mirror);
+void JVMCINMethodData::initialize(
+  int nmethod_mirror_index,
+  const char* name,
+  FailedSpeculation** failed_speculations)
+{
+  _failed_speculations = failed_speculations;
+  _nmethod_mirror_index = nmethod_mirror_index;
+  if (name != NULL) {
+    _has_name = true;
+    char* dest = (char*) this->name();
+    strcpy(dest, name);
   } else {
-    _nmethod_mirror = JVMCIObject();
+    _has_name = false;
   }
-  _nmethod_mirror_name = NULL;
+}
 
-  if (jvmciEnv->isa_InstalledCode(nmethod_mirror)) {
-    JVMCIObject nmethod_mirror_name = jvmciEnv->get_InstalledCode_name(nmethod_mirror);
-    if (!nmethod_mirror_name.is_null()) {
-      const char* name = jvmciEnv->as_utf8_string(nmethod_mirror_name);
-      char* name_copy = NEW_C_HEAP_ARRAY(char, strlen(name) + 1, mtCompiler);
-      strcpy(name_copy, name);
-      _nmethod_mirror_name = name_copy;
+void JVMCINMethodData::add_failed_speculation(nmethod* nm, jlong speculation) {
+  uint index = (speculation >> 32) & 0xFFFFFFFF;
+  int length = (int) speculation;
+  if (index + length > (uint) nm->speculations_size()) {
+    fatal(INTPTR_FORMAT "[index: %d, length: %d] out of bounds wrt encoded speculations of length %u", speculation, index, length, nm->speculations_size());
+  }
+  address data = nm->speculations_begin() + index;
+  FailedSpeculation::add_failed_speculation(nm, _failed_speculations, data, length);
+}
+
+oop JVMCINMethodData::get_nmethod_mirror(nmethod* nm) {
+  if (_nmethod_mirror_index == -1) {
+    return NULL;
+  }
+  return nm->oop_at(_nmethod_mirror_index);
+}
+
+void JVMCINMethodData::set_nmethod_mirror(nmethod* nm, oop new_mirror) {
+  assert(_nmethod_mirror_index != -1, "cannot set JVMCI mirror for nmethod");
+  oop* addr = nm->oop_addr_at(_nmethod_mirror_index);
+  assert(new_mirror != NULL, "use clear_nmethod_mirror to clear the mirror");
+  assert(*addr == NULL, "cannot overwrite non-null mirror");
+
+  // Patching in an oop so make sure nm is on the scavenge list.
+  if (ScavengeRootsInCode && Universe::heap()->is_scavengable(new_mirror)) {
+    MutexLockerEx ml_code (CodeCache_lock, Mutex::_no_safepoint_check_flag);
+    if (!nm->on_scavenge_root_list()) {
+      CodeCache::add_scavenge_root_nmethod(nm);
     }
+
+    // Since we've patched some oops in the nmethod,
+    // (re)register it with the heap.
+    Universe::heap()->register_nmethod(nm);
+  }
+
+  *addr = new_mirror;
+}
+
+void JVMCINMethodData::clear_nmethod_mirror(nmethod* nm) {
+  if (_nmethod_mirror_index != -1) {
+    oop* addr = nm->oop_addr_at(_nmethod_mirror_index);
+    *addr = NULL;
   }
 }
 
-JVMCINMethodData::~JVMCINMethodData() {
-  clear_nmethod_mirror();
-  guarantee(_nmethod_mirror.is_null(), "must be clear now");
-  clear_speculation_log(true);
-  guarantee(_speculation_log.is_null(), "must be clear now");
-  if (_nmethod_mirror_name != NULL) {
-    FREE_C_HEAP_ARRAY(char, _nmethod_mirror_name);
-    _nmethod_mirror_name = NULL;
-  }
-}
-
-void JVMCINMethodData::release(JVMCINMethodData* data) {
-  if (data->_speculation_log.is_null() || data->_speculation_log.is_hotspot()) {
-    delete data;
-  } else {
-    // Queue the data for release.  Reuse the patching lock since we need a non-safepoint locking
-    // and the JVMCI_lock must permit safepoint.
-    MutexLockerEx pl(Patching_lock, Mutex::_no_safepoint_check_flag);
-    data->_next = _for_release;
-    _for_release = data;
-  }
-}
-
-void JVMCINMethodData::cleanup() {
-  if (_for_release == NULL) {
-    return;
-  }
-  JVMCINMethodData* current = NULL;
-  {
-    MutexLockerEx pl(Patching_lock, Mutex::_no_safepoint_check_flag);
-    current = _for_release;
-    _for_release = NULL;
-  }
-  while (current != NULL) {
-    JVMCINMethodData* next = current->_next;
-    delete current;
-    current = next;
-  }
-}
-
-JVMCIObject JVMCINMethodData::get_nmethod_mirror() {
-  return _nmethod_mirror;
-}
-
-void JVMCINMethodData::add_nmethod_mirror(JVMCIEnv* jvmciEnv, JVMCIObject nmethod_mirror, JVMCI_TRAPS) {
-  // Only HotSpotNmethod instances are tracking directly by the runtime.  HotSpotNMethodHandle
-  // instances are updated cooperatively.
-  if (!jvmciEnv->is_hotspot()) {
+void JVMCINMethodData::invalidate_nmethod_mirror(nmethod* nm) {
+  oop nmethod_mirror = get_nmethod_mirror(nm);
+  if (nmethod_mirror == NULL) {
     return;
   }
 
-  if (_nmethod_mirror.is_non_null()) {
-    JVMCI_THROW_MSG(IllegalArgumentException, "Cannot overwrite existing HotSpotNmethod object for nmethod");
-  }
-  _nmethod_mirror = jvmciEnv->make_weak(nmethod_mirror);
-}
-
-void JVMCINMethodData::update_nmethod_mirror_in_gc(nmethod* nm) {
-  if (_nmethod_mirror.is_null()) {
-    return;
-  }
-  oop mirror_obj = HotSpotJVMCI::resolve(_nmethod_mirror);
-  if (mirror_obj == NULL) {
-    clear_nmethod_mirror();
-  }
-  if (_triggers_invalidation) {
-    if (_nmethod_mirror.is_null()) {
-      // The references to the mirror have been dropped so invalidate
-      // the nmethod and allow the sweeper to reclaim it.
-      nm->make_not_entrant();
+  // Update the values in the mirror if it still refers to nm.
+  // We cannot use JVMCIObject to wrap the mirror as this is called
+  // during GC, forbidding the creation of JNIHandles.
+  JVMCIEnv* jvmciEnv = NULL;
+  nmethod* current = (nmethod*) HotSpotJVMCI::InstalledCode::address(jvmciEnv, nmethod_mirror);
+  if (nm == current) {
+    if (!nm->is_alive()) {
+      // Break the link from the mirror to nm such that
+      // future invocations via the mirror will result in
+      // an InvalidInstalledCodeException.
+      HotSpotJVMCI::InstalledCode::set_address(jvmciEnv, nmethod_mirror, 0);
+      HotSpotJVMCI::InstalledCode::set_entryPoint(jvmciEnv, nmethod_mirror, 0);
+    } else if (nm->is_not_entrant()) {
+      // Zero the entry point so any new invocation will fail but keep
+      // the address link around that so that existing activations can
+      // be deoptimized via the mirror (i.e. JVMCIEnv::invalidate_installed_code).
+      HotSpotJVMCI::InstalledCode::set_entryPoint(jvmciEnv, nmethod_mirror, 0);
     }
-  }
-}
-
-void JVMCINMethodData::invalidate_mirror(nmethod* nm) {
-  if (_nmethod_mirror.is_null()) {
-    return;
-  }
-  assert(_nmethod_mirror.is_hotspot(), "only HotSpot reference is supported");
-  JVMCIEnv jvmciEnv(_nmethod_mirror, __FILE__, __LINE__);
-  if (!_nmethod_mirror.is_null()) {
-    // Check weak reference for null
-    if (jvmciEnv.equals(_nmethod_mirror, JVMCIObject())) {
-      // The referent is null so delete weak reference
-      jvmciEnv.destroy_weak(_nmethod_mirror);
-      _nmethod_mirror = JVMCIObject();
-      return;
-    }
-
-    // Update the values in the HotSpotNmethod object if it still refers to this nmethod
-    nmethod* current = (nmethod*) jvmciEnv.get_InstalledCode_address(_nmethod_mirror);
-    if (nm == current) {
-      if (!nm->is_alive()) {
-        // Break the link from HotSpotNmethod to nmethod such that
-        // future invocations via the HotSpotNmethod will result in
-        // an InvalidInstalledCodeException.
-        jvmciEnv.set_InstalledCode_address(_nmethod_mirror, 0);
-        jvmciEnv.set_InstalledCode_entryPoint(_nmethod_mirror, 0);
-      } else if (nm->is_not_entrant()) {
-        // Zero the entry point so any new invocation will fail but keep
-        // the address link around that so that existing activations can
-        // be invalidated (i.e. JVMCIEnv::invalidate_installed_code).
-        jvmciEnv.set_InstalledCode_entryPoint(_nmethod_mirror, 0);
-      }
-    }
-  }
-  if (!nm->is_alive()) {
-    // Clear these out after the nmethod is dead and all
-    // relevant fields in the HotSpotNmethod have been zeroed.
-    clear_nmethod_mirror();
-  }
-  if (!nm->is_alive()) {
-    clear_speculation_log();
-  }
-}
-
-void JVMCINMethodData::update_speculation(JavaThread* thread, nmethod* nm) {
-  long speculation = thread->pending_failed_speculation();
-  if (speculation != 0) {
-    if (!_speculation_log.is_null()) {
-      JVMCIEnv jvmciEnv(_speculation_log, __FILE__, __LINE__);
-      if (jvmciEnv.equals(_speculation_log, JVMCIObject())) {
-        // The weak reference has been cleared
-        jvmciEnv.destroy_weak(_speculation_log);
-        _speculation_log = JVMCIObject();
-        return;
-      }
-      if (TraceDeoptimization || TraceUncollectedSpeculations) {
-        if (jvmciEnv.get_HotSpotSpeculationLog_lastFailed(_speculation_log) != 0) {
-          tty->print_cr("A speculation that was not collected by the compiler is being overwritten");
-        }
-      }
-      if (TraceDeoptimization) {
-        tty->print_cr("Saving speculation to speculation log");
-      }
-      jvmciEnv.set_HotSpotSpeculationLog_lastFailed(_speculation_log, speculation);
-    } else {
-      if (TraceDeoptimization) {
-        tty->print_cr("Speculation present but no speculation log");
-      }
-    }
-    thread->set_pending_failed_speculation(0);
-  }
-}
-
-void JVMCINMethodData::clear_nmethod_mirror() {
-  if (!_nmethod_mirror.is_null()) {
-    JVMCIEnv jvmciEnv(_nmethod_mirror, __FILE__, __LINE__);
-    jvmciEnv.destroy_weak(_nmethod_mirror);
-    _nmethod_mirror = JVMCIObject();
-  }
-}
-
-void JVMCINMethodData::clear_speculation_log(bool force) {
-  if (!_speculation_log.is_null()) {
-    // Non HotSpot speculations have to be cleaned up more carefully so
-    // they shouldn't be done by default.
-    if (!force && !_speculation_log.is_hotspot()) {
-      return;
-    }
-    JVMCIEnv jvmciEnv(_speculation_log, __FILE__, __LINE__);
-    jvmciEnv.destroy_weak(_speculation_log);
-    _speculation_log = JVMCIObject();
   }
 }
 
 void JVMCIRuntime::initialize_HotSpotJVMCIRuntime(JVMCI_TRAPS) {
   if (!_HotSpotJVMCIRuntime_instance.is_null()) {
-    if (JVMCIENV->is_hotspot() && JVMCIGlobals::java_mode() == JVMCIGlobals::SharedLibrary) {
+    if (JVMCIENV->is_hotspot() && UseJVMCINativeLibrary) {
       JVMCI_THROW_MSG(InternalError, "JVMCI has already been enabled in the JVMCI shared library");
     }
   }
@@ -1197,7 +1095,7 @@ void JVMCI::initialize_compiler(TRAPS) {
 void JVMCI::initialize_globals() {
   _object_handles = JNIHandleBlock::allocate_block();
   _metadata_handles = MetadataHandleBlock::allocate_block();
-  if (JVMCIGlobals::java_mode() == JVMCIGlobals::SharedLibrary) {
+  if (UseJVMCINativeLibrary) {
     // There are two runtimes.
     _compiler_runtime = new JVMCIRuntime();
     _java_runtime = new JVMCIRuntime();
@@ -1236,7 +1134,7 @@ void JVMCIRuntime::initialize(JVMCIEnv* JVMCIENV) {
     HandleMark hm;
     ResourceMark rm;
     JavaThread* THREAD = JavaThread::current();
-    if (JVMCIENV->mode() == JVMCIGlobals::HotSpot) {
+    if (JVMCIENV->is_hotspot()) {
       HotSpotJVMCI::compute_offsets(CHECK_EXIT);
     } else {
       JNIAccessMark jni(JVMCIENV);
@@ -1256,7 +1154,12 @@ void JVMCIRuntime::initialize(JVMCIEnv* JVMCIENV) {
     create_jvmci_primitive_type(T_FLOAT, JVMCI_CHECK_EXIT_((void)0));
     create_jvmci_primitive_type(T_DOUBLE, JVMCI_CHECK_EXIT_((void)0));
     create_jvmci_primitive_type(T_VOID, JVMCI_CHECK_EXIT_((void)0));
+
+    if (!JVMCIENV->is_hotspot()) {
+      JVMCIENV->copy_saved_properties();
+    }
   }
+
   _initialized = true;
   _being_initialized = false;
   JVMCI_lock->notify_all();
@@ -1292,7 +1195,6 @@ void JVMCIRuntime::initialize_JVMCI(JVMCI_TRAPS) {
     initialize(JVMCI_CHECK);
     JVMCIENV->call_JVMCI_getRuntime(JVMCI_CHECK);
   }
-  assert(_HotSpotJVMCIRuntime_instance.is_non_null(), "what?");
 }
 
 JVMCIObject JVMCIRuntime::get_HotSpotJVMCIRuntime(JVMCI_TRAPS) {
@@ -1456,26 +1358,30 @@ CompLevel JVMCIRuntime::adjust_comp_level_inner(methodHandle method, bool is_osr
   ResourceMark rm;
   HandleMark hm;
 
-#define CHECK_RETURN JVMCIENV); \
-  if (HAS_PENDING_EXCEPTION) { \
-    Handle exception(THREAD, PENDING_EXCEPTION); \
-    CLEAR_PENDING_EXCEPTION; \
-  \
-    if (exception->is_a(SystemDictionary::ThreadDeath_klass())) { \
-      /* In the special case of ThreadDeath, we need to reset the */ \
-      /* pending async exception so that it is propagated.         */ \
-      thread->set_pending_async_exception(exception()); \
-      return level; \
-    } \
-    tty->print("Uncaught exception while adjusting compilation level: "); \
-    java_lang_Throwable::print(exception(), tty); \
-    tty->cr(); \
-    java_lang_Throwable::print_stack_trace(exception, tty); \
-    if (HAS_PENDING_EXCEPTION) { \
-      CLEAR_PENDING_EXCEPTION; \
-    } \
-    return level; \
-  } \
+#define CHECK_RETURN JVMCIENV);                                         \
+  if (JVMCIENV->has_pending_exception()) {                              \
+    if (JVMCIENV->is_hotspot()) {                                       \
+      Handle exception(THREAD, PENDING_EXCEPTION);                      \
+      CLEAR_PENDING_EXCEPTION;                                          \
+                                                                        \
+      if (exception->is_a(SystemDictionary::ThreadDeath_klass())) {     \
+        /* In the special case of ThreadDeath, we need to reset the */  \
+        /* pending async exception so that it is propagated.         */ \
+        thread->set_pending_async_exception(exception());               \
+        return level;                                                   \
+      }                                                                 \
+      tty->print("Uncaught exception while adjusting compilation level: "); \
+      java_lang_Throwable::print(exception(), tty);                     \
+      tty->cr();                                                        \
+      java_lang_Throwable::print_stack_trace(exception, tty);           \
+      if (HAS_PENDING_EXCEPTION) {                                      \
+        CLEAR_PENDING_EXCEPTION;                                        \
+      }                                                                 \
+    } else {                                                            \
+      JVMCIENV->clear_pending_exception();                              \
+    }                                                                   \
+    return level;                                                       \
+  }                                                                     \
   (void)(0
 
 
@@ -1488,7 +1394,7 @@ CompLevel JVMCIRuntime::adjust_comp_level_inner(methodHandle method, bool is_osr
     sig = JVMCIENV->create_string(method->signature(), CHECK_RETURN);
   }
 
-  int comp_level = JVMCIENV->call_HotSpotJVMCIRuntime_adjustCompilationLevel(receiver, method->method_holder(), name, sig, is_osr, level, JVMCI_CHECK_EXIT_(level));
+  int comp_level = JVMCIENV->call_HotSpotJVMCIRuntime_adjustCompilationLevel(receiver, method->method_holder(), name, sig, is_osr, level, CHECK_RETURN);
   if (comp_level < CompLevel_none || comp_level > CompLevel_full_optimization) {
     assert(false, "compilation level out of bounds");
     return level;
@@ -1542,15 +1448,6 @@ void JVMCIRuntime::exit_on_pending_exception(JVMCIEnv* JVMCIENV, const char* mes
   before_exit(THREAD);
   vm_exit(-1);
 }
-
-Klass* JVMCIRuntime::resolve_or_null(Symbol* name, TRAPS) {
-  return SystemDictionary::resolve_or_null(name, CHECK_NULL);
-}
-
-Klass* JVMCIRuntime::resolve_or_fail(Symbol* name, TRAPS) {
-  return SystemDictionary::resolve_or_fail(name, true, CHECK_NULL);
-}
-
 
 // ------------------------------------------------------------------
 // Note: the logic of this method should mirror the logic of
@@ -1935,8 +1832,19 @@ void JVMCIRuntime::compile_method(JVMCIEnv* JVMCIENV, JVMCICompiler* compiler, c
   }
 
   HandleMark hm;
-  JVMCIObject receiver = get_HotSpotJVMCIRuntime(JVMCI_CHECK_EXIT);
-  JVMCIObject jvmci_method = JVMCIENV->get_jvmci_method(method, JVMCI_CHECK);
+  JVMCIObject receiver = get_HotSpotJVMCIRuntime(JVMCIENV);
+  if (JVMCIENV->has_pending_exception()) {
+    JVMCIENV->describe_pending_exception(true);
+    compile_state->set_failure(false, "exception getting HotSpotJVMCIRuntime object");
+    return;
+  }
+  JVMCIObject jvmci_method = JVMCIENV->get_jvmci_method(method, JVMCIENV);
+  if (JVMCIENV->has_pending_exception()) {
+    JVMCIENV->describe_pending_exception(true);
+    compile_state->set_failure(false, "exception getting JVMCI wrapper method");
+    return;
+  }
+
   JVMCIObject result_object = JVMCIENV->call_HotSpotJVMCIRuntime_compileMethod(receiver, jvmci_method, entry_bci,
                                                                      (jlong) compile_state, compile_state->task()->compile_id());
   if (!JVMCIENV->has_pending_exception()) {
@@ -1992,17 +1900,27 @@ JVMCI::CodeInstallResult JVMCIRuntime::register_method(JVMCIEnv* JVMCIENV,
                                 bool has_wide_vector,
                                 JVMCIObject compiled_code,
                                 JVMCIObject nmethod_mirror,
-                                JVMCIObject speculation_log) {
+                                FailedSpeculation** failed_speculations,
+                                char* speculations,
+                                int speculations_len) {
   JVMCI_EXCEPTION_CONTEXT;
   nm = NULL;
   int comp_level = CompLevel_full_optimization;
   char* failure_detail = NULL;
 
-  assert(JVMCIENV->isa_HotSpotNmethod(nmethod_mirror), "must be");
   bool install_default = JVMCIENV->get_HotSpotNmethod_isDefault(nmethod_mirror) != 0;
-  bool triggers_invalidation = !install_default;
-
-  JVMCINMethodData* data = new JVMCINMethodData(JVMCIENV, nmethod_mirror, speculation_log, triggers_invalidation);
+  assert(JVMCIENV->isa_HotSpotNmethod(nmethod_mirror), "must be");
+  JVMCIObject name = JVMCIENV->get_InstalledCode_name(nmethod_mirror);
+  const char* nmethod_mirror_name = name.is_null() ? NULL : JVMCIENV->as_utf8_string(name);
+  int nmethod_mirror_index;
+  if (!install_default) {
+    // Reserve or initialize mirror slot in the oops table.
+    OopRecorder* oop_recorder = debug_info->oop_recorder();
+    nmethod_mirror_index = oop_recorder->allocate_oop_index(nmethod_mirror.is_hotspot() ? nmethod_mirror.as_jobject() : NULL);
+  } else {
+    // A HotSpotNmethod mirror whose compileIdSnapshot is non-zero is not tracked by the nmethod
+    nmethod_mirror_index = -1;
+  }
 
   JVMCI::CodeInstallResult result;
   {
@@ -2053,10 +1971,11 @@ JVMCI::CodeInstallResult JVMCIRuntime::register_method(JVMCIEnv* JVMCIENV,
                                  frame_words, oop_map_set,
                                  handler_table, &implicit_tbl,
                                  compiler, comp_level,
-                                 data);
+                                 speculations, speculations_len,
+                                 nmethod_mirror_index, nmethod_mirror_name, failed_speculations);
+
 
       // Free codeBlobs
-      //code_buffer->free_blob();
       if (nm == NULL) {
         // The CodeCache is full.  Print out warning and disable compilation.
         {
@@ -2074,7 +1993,9 @@ JVMCI::CodeInstallResult JVMCIRuntime::register_method(JVMCIEnv* JVMCIENV,
           JVMCIENV->compile_state()->task()->set_code(nm);
         }
 
+        JVMCINMethodData* data = nm->jvmci_nmethod_data();
         if (install_default) {
+          assert(!nmethod_mirror.is_hotspot() || data->get_nmethod_mirror(nm) == NULL, "must be");
           if (entry_bci == InvocationEntryBci) {
             if (TieredCompilation) {
               // If there is an old version we're done with it
@@ -2110,16 +2031,13 @@ JVMCI::CodeInstallResult JVMCIRuntime::register_method(JVMCIEnv* JVMCIENV,
             }
             InstanceKlass::cast(method->method_holder())->add_osr_nmethod(nm);
           }
+        } else {
+          assert(!nmethod_mirror.is_hotspot() || data->get_nmethod_mirror(nm) == HotSpotJVMCI::resolve(nmethod_mirror), "must be");
         }
         nm->make_in_use();
       }
       result = nm != NULL ? JVMCI::ok :JVMCI::cache_full;
     }
-  }
-
-  if (result != JVMCI::ok) {
-    delete data;
-    data = NULL;
   }
 
   // String creation must be done outside lock

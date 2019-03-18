@@ -32,6 +32,7 @@
 #include "compiler/oopMap.hpp"
 #include "jvmci/jvmciJavaClasses.hpp"
 #include "jvmci/jvmciExceptions.hpp"
+#include "oops/typeArrayOop.inline.hpp"
 #include "runtime/interfaceSupport.inline.hpp"
 #include "runtime/thread.hpp"
 #include "memory/oopFactory.hpp"
@@ -142,7 +143,7 @@ class JVMCIEnv : public ResourceObj {
 
   JNIEnv*                _env;     // JNI env for calling into shared library
   JVMCIRuntime*          _runtime; // Access to a HotSpotJVMCIRuntime
-  JVMCIGlobals::JavaMode _mode;    // Which heap is the HotSpotJVMCIRuntime in
+  bool             _is_hotspot;    // Which heap is the HotSpotJVMCIRuntime in
   bool        _throw_to_caller;    // Propagate an exception raised in this env to the caller?
   const char*            _file;    // The file and ...
   int                    _line;    // ... line where this JNIEnv was created
@@ -194,6 +195,10 @@ public:
     return _runtime;
   }
 
+  // Initializes Services.savedProperties in the shared library by copying
+  // the values from the same field in the HotSpot heap.
+  void copy_saved_properties();
+
   jboolean has_pending_exception() {
     if (!is_hotspot()) {
       JNIAccessMark jni(this);
@@ -204,7 +209,15 @@ public:
     }
   }
 
-  jboolean clear_pending_exception();
+  void clear_pending_exception() {
+    if (!is_hotspot()) {
+      JNIAccessMark jni(this);
+      jni()->ExceptionClear();
+    } else {
+      Thread* THREAD = Thread::current();
+      CLEAR_PENDING_EXCEPTION;
+    }
+  }
 
   // Prints an exception and stack trace of a pending exception.
   void describe_pending_exception(bool clear);
@@ -347,10 +360,14 @@ public:
     }
   }
 
+  // Get the primitive value from a Java boxing object.  It's hard error to
+  // pass a non-primitive BasicType.
   jvalue get_boxed_value(BasicType type, JVMCIObject object) {
     jvalue result;
     if (is_hotspot()) {
-      java_lang_boxing_object::get_value(HotSpotJVMCI::resolve(object), &result);
+      if (java_lang_boxing_object::get_value(HotSpotJVMCI::resolve(object), &result) == T_ILLEGAL) {
+        ShouldNotReachHere();
+      }
     } else {
       JNIAccessMark jni(this);
       jfieldID field = JNIJVMCI::box_field(type);
@@ -370,6 +387,7 @@ public:
     return result;
   }
 
+  // Return the BasicType of the object if it's a boxing object, otherwise return T_ILLEGAL.
   BasicType get_box_type(JVMCIObject object) {
     if (is_hotspot()) {
       return java_lang_boxing_object::basic_type(HotSpotJVMCI::resolve(object));
@@ -384,12 +402,25 @@ public:
       if (jni()->IsSameObject(clazz, JNIJVMCI::box_class(T_LONG))) return T_LONG;
       if (jni()->IsSameObject(clazz, JNIJVMCI::box_class(T_FLOAT))) return T_FLOAT;
       if (jni()->IsSameObject(clazz, JNIJVMCI::box_class(T_DOUBLE))) return T_DOUBLE;
-      ShouldNotReachHere();
-      return T_CONFLICT;
+      return T_ILLEGAL;
     }
   }
 
+  // Create a boxing object of the appropriate primitive type.
   JVMCIObject create_box(BasicType type, jvalue* value, JVMCI_TRAPS) {
+    switch (type) {
+      case T_BOOLEAN:
+      case T_BYTE:
+      case T_CHAR:
+      case T_SHORT:
+      case T_INT:
+      case T_LONG:
+      case T_FLOAT:
+      case T_DOUBLE:
+        break;
+      default:
+        JVMCI_THROW_MSG_(IllegalArgumentException, "Only boxes for primitive values can be created", JVMCIObject());
+    }
     if (is_hotspot()) {
       JavaThread* THREAD = JavaThread::current();
       oop box = java_lang_boxing_object::create(type, value, CHECK_(JVMCIObject()));
@@ -446,7 +477,7 @@ public:
   JVMCIObjectArray    wrap(jobjectArray obj)  { return (JVMCIObjectArray)    wrap((jobject) obj); }
   JVMCIPrimitiveArray wrap(jintArray obj)     { return (JVMCIPrimitiveArray) wrap((jobject) obj); }
   JVMCIPrimitiveArray wrap(jbooleanArray obj) { return (JVMCIPrimitiveArray) wrap((jobject) obj); }
-  JVMCIPrimitiveArray wrap(jbyteArray obj) { return (JVMCIPrimitiveArray) wrap((jobject) obj); }
+  JVMCIPrimitiveArray wrap(jbyteArray obj)    { return (JVMCIPrimitiveArray) wrap((jobject) obj); }
   JVMCIPrimitiveArray wrap(jlongArray obj)    { return (JVMCIPrimitiveArray) wrap((jobject) obj); }
 
  private:
@@ -554,7 +585,7 @@ public:
   JVMCIObject get_jvmci_constant_pool(constantPoolHandle cp, JVMCI_TRAPS);
   JVMCIObject get_jvmci_primitive_type(BasicType type);
 
-  oop asConstant(JVMCIObject object, JVMCI_TRAPS);
+  Handle asConstant(JVMCIObject object, JVMCI_TRAPS);
   JVMCIObject get_object_constant(oop objOop, bool compressed = false, bool dont_register = false);
 
   JVMCIPrimitiveArray new_booleanArray(int length, JVMCI_TRAPS);
@@ -562,8 +593,10 @@ public:
   JVMCIPrimitiveArray new_intArray(int length, JVMCI_TRAPS);
   JVMCIPrimitiveArray new_longArray(int length, JVMCI_TRAPS);
 
+  JVMCIObjectArray new_byte_array_array(int length, JVMCI_TRAPS);
+
   JVMCIObject new_StackTraceElement(methodHandle method, int bci, JVMCI_TRAPS);
-  JVMCIObject new_HotSpotNmethod(methodHandle method, const char* name, jboolean isDefault, JVMCI_TRAPS);
+  JVMCIObject new_HotSpotNmethod(methodHandle method, const char* name, jboolean isDefault, jlong compileId, JVMCI_TRAPS);
   JVMCIObject new_VMField(JVMCIObject name, JVMCIObject type, jlong offset, jlong address, JVMCIObject value, JVMCI_TRAPS);
   JVMCIObject new_VMFlag(JVMCIObject name, JVMCIObject type, JVMCIObject value, JVMCI_TRAPS);
   JVMCIObject new_VMIntrinsicMethod(JVMCIObject declaringClass, JVMCIObject name, JVMCIObject descriptor, int id, JVMCI_TRAPS);
@@ -581,9 +614,9 @@ public:
   void destroy_global(JVMCIObject object);
   void destroy_weak(JVMCIObject object);
 
-  // Deoptimizes the nmethod (if any) in the address field of a given
-  // HotSpotNmethod object. The address field is also zeroed.
-  void invalidate_nmethod_mirror(JVMCIObject nmethod_mirror, JVMCI_TRAPS);
+  // Deoptimizes the nmethod (if any) in the HotSpotNmethod.address
+  // field of mirror. The field is subsequently zeroed.
+  void invalidate_nmethod_mirror(JVMCIObject mirror, JVMCI_TRAPS);
 
   void initialize_installed_code(JVMCIObject installed_code, CodeBlob* cb, JVMCI_TRAPS);
 
@@ -597,9 +630,7 @@ public:
 
   // Determines if this is for the JVMCI runtime in the HotSpot
   // heap (true) or the shared library heap (false).
-  bool is_hotspot() { return _mode == JVMCIGlobals::HotSpot; }
-
-  JVMCIGlobals::JavaMode mode()              { return _mode; }
+  bool is_hotspot() { return _is_hotspot; }
 
   JVMCICompileState* compile_state() { return _compile_state; }
   void set_compile_state(JVMCICompileState* compile_state) {

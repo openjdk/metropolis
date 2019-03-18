@@ -400,11 +400,11 @@ ScopeValue* CodeInstaller::get_scope_value(JVMCIObject value, BasicType type, Gr
       }
     } else if (jvmci_env()->isa_HotSpotObjectConstantImpl(value)) {
       if (type == T_OBJECT) {
-        oop obj = jvmci_env()->asConstant(value, JVMCI_CHECK_NULL);
+        Handle obj = jvmci_env()->asConstant(value, JVMCI_CHECK_NULL);
         if (obj == NULL) {
           JVMCI_ERROR_NULL("null value must be in NullConstant");
         }
-        return new ConstantOopWriteValue(JNIHandles::make_local(obj));
+        return new ConstantOopWriteValue(JNIHandles::make_local(obj()));
       } else {
         JVMCI_ERROR_NULL("unexpected object constant, expected %s", basictype_to_str(type));
       }
@@ -585,7 +585,16 @@ JVMCI::CodeInstallResult CodeInstaller::gather_metadata(JVMCIObject target, JVMC
 #endif // INCLUDE_AOT
 
 // constructor used to create a method
-JVMCI::CodeInstallResult CodeInstaller::install(JVMCICompiler* compiler, JVMCIObject target, JVMCIObject compiled_code, CodeBlob*& cb, JVMCIObject installed_code, JVMCIObject speculation_log, JVMCI_TRAPS) {
+JVMCI::CodeInstallResult CodeInstaller::install(JVMCICompiler* compiler,
+    JVMCIObject target,
+    JVMCIObject compiled_code,
+    CodeBlob*& cb,
+    JVMCIObject installed_code,
+    FailedSpeculation** failed_speculations,
+    char* speculations,
+    int speculations_len,
+    JVMCI_TRAPS) {
+
   CodeBuffer buffer("JVMCI Compiler CodeBuffer");
   OopRecorder* recorder = new OopRecorder(&_arena, true);
   initialize_dependencies(compiled_code, recorder, JVMCI_CHECK_OK);
@@ -637,12 +646,13 @@ JVMCI::CodeInstallResult CodeInstaller::install(JVMCICompiler* compiler, JVMCIOb
       JVMCI_THROW_MSG_(IllegalArgumentException, "InstalledCode object must be a HotSpotNmethod when installing a HotSpotCompiledNmethod", JVMCI::ok);
     }
 
-    JVMCIObject nmethod_mirror = installed_code;
+    JVMCIObject mirror = installed_code;
     nmethod* nm = NULL;
     result = runtime()->register_method(jvmci_env(), method, nm, entry_bci, &_offsets, _orig_pc_offset, &buffer,
                                         stack_slots, _debug_recorder->_oopmaps, &_exception_handler_table,
                                         compiler, _debug_recorder, _dependencies, id,
-                                        has_unsafe_access, _has_wide_vector, compiled_code, nmethod_mirror, speculation_log);
+                                        has_unsafe_access, _has_wide_vector, compiled_code, mirror,
+                                        failed_speculations, speculations, speculations_len);
     cb = nm->as_codeblob_or_null();
     if (nm != NULL && compile_state == NULL) {
       DirectiveSet* directive = DirectivesStack::getMatchingDirective(method, compiler);
@@ -831,8 +841,8 @@ JVMCI::CodeInstallResult CodeInstaller::initialize_buffer(CodeBuffer& buffer, bo
         *((void**) dest) = record_metadata_reference(_constants, dest, constant, JVMCI_CHECK_OK);
       }
     } else if (jvmci_env()->isa_HotSpotObjectConstantImpl(constant)) {
-      oop obj = jvmci_env()->asConstant(constant, JVMCI_CHECK_OK);
-      jobject value = JNIHandles::make_local(obj);
+      Handle obj = jvmci_env()->asConstant(constant, JVMCI_CHECK_OK);
+      jobject value = JNIHandles::make_local(obj());
       int oop_index = _oop_recorder->find_index(value);
 
       if (jvmci_env()->get_HotSpotObjectConstantImpl_compressed(constant)) {
@@ -945,13 +955,10 @@ void CodeInstaller::assumption_ConcreteMethod(JVMCIObject assumption) {
 }
 
 void CodeInstaller::assumption_CallSiteTargetValue(JVMCIObject assumption, JVMCI_TRAPS) {
-  Thread* THREAD = Thread::current();
   JVMCIObject callSiteConstant = jvmci_env()->get_Assumptions_CallSiteTargetValue_callSite(assumption);
-  oop callSiteOop = jvmci_env()->asConstant(callSiteConstant, JVMCI_CHECK);
-  Handle callSite(THREAD, callSiteOop);
+  Handle callSite = jvmci_env()->asConstant(callSiteConstant, JVMCI_CHECK);
   JVMCIObject methodConstant = jvmci_env()->get_Assumptions_CallSiteTargetValue_methodHandle(assumption);
-  oop methodHandleOop = jvmci_env()->asConstant(methodConstant, JVMCI_CHECK);
-  Handle methodHandle(THREAD, methodHandleOop);
+  Handle methodHandle = jvmci_env()->asConstant(methodConstant, JVMCI_CHECK);
   _dependencies->assert_call_site_target_value(callSite(), methodHandle());
 }
 

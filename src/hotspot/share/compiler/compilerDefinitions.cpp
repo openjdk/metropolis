@@ -253,22 +253,6 @@ void set_jvmci_specific_flags() {
     if (FLAG_IS_DEFAULT(TypeProfileWidth)) {
       FLAG_SET_DEFAULT(TypeProfileWidth, 8);
     }
-    if (FLAG_IS_DEFAULT(OnStackReplacePercentage)) {
-      FLAG_SET_DEFAULT(OnStackReplacePercentage, 933);
-    }
-    // JVMCI needs values not less than defaults
-    if (FLAG_IS_DEFAULT(ReservedCodeCacheSize)) {
-      FLAG_SET_DEFAULT(ReservedCodeCacheSize, MAX2(64*M, ReservedCodeCacheSize));
-    }
-    if (FLAG_IS_DEFAULT(InitialCodeCacheSize)) {
-      FLAG_SET_DEFAULT(InitialCodeCacheSize, MAX2(16*M, InitialCodeCacheSize));
-    }
-    if (FLAG_IS_DEFAULT(MetaspaceSize)) {
-      FLAG_SET_DEFAULT(MetaspaceSize, MIN2(MAX2(12*M, MetaspaceSize), MaxMetaspaceSize));
-    }
-    if (FLAG_IS_DEFAULT(NewSizeThreadIncrease)) {
-      FLAG_SET_DEFAULT(NewSizeThreadIncrease, MAX2(4*K, NewSizeThreadIncrease));
-    }
     if (TieredStopAtLevel != CompLevel_full_optimization) {
       // Currently JVMCI compiler can only work at the full optimization level
       warning("forcing TieredStopAtLevel to full optimization because JVMCI is enabled");
@@ -278,12 +262,31 @@ void set_jvmci_specific_flags() {
       FLAG_SET_DEFAULT(TypeProfileLevel, 0);
     }
 
-    // SVM compiled code requires more stack space
-    if (JVMCIGlobals::java_mode() == JVMCIGlobals::SharedLibrary) {
+    if (UseJVMCINativeLibrary) {
+      // SVM compiled code requires more stack space
       if (FLAG_IS_DEFAULT(CompilerThreadStackSize)) {
         FLAG_SET_DEFAULT(CompilerThreadStackSize, 2*M);
       }
-    }
+    } else {
+      // Adjust the on stack replacement percentage to avoid early
+      // OSR compilations while JVMCI itself is warming up
+      if (FLAG_IS_DEFAULT(OnStackReplacePercentage)) {
+        FLAG_SET_DEFAULT(OnStackReplacePercentage, 933);
+      }
+      // JVMCI needs values not less than defaults
+      if (FLAG_IS_DEFAULT(ReservedCodeCacheSize)) {
+        FLAG_SET_DEFAULT(ReservedCodeCacheSize, MAX2(64*M, ReservedCodeCacheSize));
+      }
+      if (FLAG_IS_DEFAULT(InitialCodeCacheSize)) {
+        FLAG_SET_DEFAULT(InitialCodeCacheSize, MAX2(16*M, InitialCodeCacheSize));
+      }
+      if (FLAG_IS_DEFAULT(MetaspaceSize)) {
+        FLAG_SET_DEFAULT(MetaspaceSize, MIN2(MAX2(12*M, MetaspaceSize), MaxMetaspaceSize));
+      }
+      if (FLAG_IS_DEFAULT(NewSizeThreadIncrease)) {
+        FLAG_SET_DEFAULT(NewSizeThreadIncrease, MAX2(4*K, NewSizeThreadIncrease));
+      }
+    } // !UseJVMCINativeLibrary
   } // UseJVMCICompiler
 }
 #endif // INCLUDE_JVMCI
@@ -401,7 +404,6 @@ void CompilerConfig::ergo_initialize() {
   JVMCIGlobals::check_jvmci_supported_gc();
 
   // Do JVMCI specific settings
-  JVMCIGlobals::init_java_mode_from_flags();
   set_jvmci_specific_flags();
 #endif
 

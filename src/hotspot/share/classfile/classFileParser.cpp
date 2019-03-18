@@ -5632,10 +5632,22 @@ void ClassFileParser::fill_instance_klass(InstanceKlass* ik, bool changed_by_loa
   ClassLoadingService::notify_class_loaded(ik, false /* not shared class */);
 
   if (!is_internal()) {
-    if (log_is_enabled(Info, class, load)) {
+    bool trace_class_loading = log_is_enabled(Info, class, load);
+#if INCLUDE_JVMCI
+    bool trace_loading_cause = TraceClassLoadingCause != NULL &&
+        (strcmp(TraceClassLoadingCause, "*") == 0 ||
+         strstr(ik->external_name(), TraceClassLoadingCause) != NULL);
+    trace_class_loading = trace_class_loading || trace_loading_cause;
+#endif
+    if (trace_class_loading) {
       ResourceMark rm;
       const char* module_name = (module_entry->name() == NULL) ? UNNAMED_MODULE : module_entry->name()->as_C_string();
       ik->print_class_load_logging(_loader_data, module_name, _stream);
+#if INCLUDE_JVMCI
+      if (trace_loading_cause) {
+        JavaThread::current()->print_stack_on(tty);
+      }
+#endif
     }
 
     if (ik->minor_version() == JAVA_PREVIEW_MINOR_VERSION &&

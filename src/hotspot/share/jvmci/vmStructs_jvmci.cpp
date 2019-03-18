@@ -180,7 +180,7 @@
   volatile_nonstatic_field(JavaThread,         _is_method_handle_return,                      int)                                   \
   nonstatic_field(JavaThread,                  _osthread,                                     OSThread*)                             \
   nonstatic_field(JavaThread,                  _pending_deoptimization,                       int)                                   \
-  nonstatic_field(JavaThread,                  _pending_failed_speculation,                   long)                                  \
+  nonstatic_field(JavaThread,                  _pending_failed_speculation,                   jlong)                                 \
   nonstatic_field(JavaThread,                  _pending_transfer_to_interpreter,              bool)                                  \
   nonstatic_field(JavaThread,                  _jvmci_counters,                               jlong*)                                \
   nonstatic_field(JavaThread,                  _should_post_on_exceptions_flag,               int)                                   \
@@ -354,6 +354,7 @@
   declare_toplevel_type(JVMFlag)                                          \
   declare_toplevel_type(JVMFlag*)                                         \
   declare_toplevel_type(InvocationCounter)                                \
+  declare_toplevel_type(JVMCICompileState)                                \
   declare_toplevel_type(JVMCIEnv)                                         \
   declare_toplevel_type(LocalVariableTableElement)                        \
   declare_toplevel_type(narrowKlass)                                      \

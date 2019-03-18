@@ -92,58 +92,69 @@ JavaVM* JVMCIEnv::_shared_library_javavm = NULL;
 void* JVMCIEnv::_shared_library_handle = NULL;
 char* JVMCIEnv::_shared_library_path = NULL;
 
-static void init_shared_library_options(JavaVMInitArgs& vm_args) {
-  int n_options = 0;
-  int args_len = 0;
-  const size_t len = JVMCILibArgs != NULL ? strlen(JVMCILibArgs) : 0;
-  char sep = JVMCILibArgsSep[0];
-  const char* p = JVMCILibArgs;
-  const char* end = JVMCILibArgs + len;
-  while (p < end) {
-    if (*p != sep) {
-      args_len++;
-      if (p == JVMCILibArgs || *(p - 1) == sep) {
-        n_options++;
-      }
-    }
-    p++;
+void JVMCIEnv::copy_saved_properties() {
+  assert(!is_hotspot(), "can only copy saved properties from HotSpot to native image");
+
+  JavaThread* THREAD = JavaThread::current();
+
+  Klass* k = SystemDictionary::resolve_or_fail(vmSymbols::jdk_vm_ci_services_Services(), Handle(), Handle(), true, THREAD);
+  if (HAS_PENDING_EXCEPTION) {
+    JVMCIRuntime::exit_on_pending_exception(NULL, "Error initializing jdk.vm.ci.services.Services");
   }
-
-  JavaVMOption* options = NEW_RESOURCE_ARRAY(JavaVMOption, n_options);
-  int option_index = 0;
-
-  if (args_len != 0) {
-    int i = 0;
-    char* args = NEW_RESOURCE_ARRAY(char, args_len);
-    char* a = args;
-    int args_index = 0;
-    p = JVMCILibArgs;
-    while (p < end) {
-      // Skip separator chars
-      while (*p == sep) {
-        p++;
-      }
-
-      char* arg = a;
-      while (*p != sep && *p != '\0') {
-        *a++ = *p++;
-      }
-      p++;
-      if (arg != a) {
-        *a++ = '\0';
-        options[option_index++].optionString = arg;
-      }
+  InstanceKlass* ik = InstanceKlass::cast(k);
+  if (ik->should_be_initialized()) {
+    ik->initialize(THREAD);
+    if (HAS_PENDING_EXCEPTION) {
+      JVMCIRuntime::exit_on_pending_exception(NULL, "Error initializing jdk.vm.ci.services.Services");
     }
   }
-  assert(option_index == n_options, "must be");
-  vm_args.options = options;
-  vm_args.nOptions = n_options;
+
+  // Get the serialized saved properties from HotSpot
+  TempNewSymbol serializeSavedProperties = SymbolTable::new_symbol("serializeSavedProperties", CHECK_EXIT);
+  JavaValue result(T_OBJECT);
+  JavaCallArguments args;
+  JavaCalls::call_static(&result, ik, serializeSavedProperties, vmSymbols::serializePropertiesToByteArray_signature(), &args, THREAD);
+  if (HAS_PENDING_EXCEPTION) {
+    JVMCIRuntime::exit_on_pending_exception(NULL, "Error calling jdk.vm.ci.services.Services.serializeSavedProperties");
+  }
+  oop res = (oop) result.get_jobject();
+  assert(res->is_typeArray(), "must be");
+  assert(TypeArrayKlass::cast(res->klass())->element_type() == T_BYTE, "must be");
+  typeArrayOop ba = typeArrayOop(res);
+  int serialized_properties_len = ba->length();
+
+  // Copy serialized saved properties from HotSpot object into native buffer
+  jbyte* serialized_properties = NEW_RESOURCE_ARRAY(jbyte, serialized_properties_len);
+  memcpy(serialized_properties, ba->byte_at_addr(0), serialized_properties_len);
+
+  // Copy native buffer into shared library object
+  JVMCIPrimitiveArray buf = new_byteArray(serialized_properties_len, this);
+  if (has_pending_exception()) {
+    describe_pending_exception(true);
+    fatal("Error in copy_saved_properties");
+  }
+  copy_bytes_from(serialized_properties, buf, 0, serialized_properties_len);
+  if (has_pending_exception()) {
+    describe_pending_exception(true);
+    fatal("Error in copy_saved_properties");
+  }
+
+  // Initialize saved properties in shared library
+  jclass servicesClass = JNIJVMCI::Services::clazz();
+  jmethodID initializeSavedProperties = JNIJVMCI::Services::initializeSavedProperties_method();
+  JNIAccessMark jni(this);
+  jni()->CallStaticVoidMethod(servicesClass, initializeSavedProperties, buf.as_jobject());
+  if (jni()->ExceptionCheck()) {
+    jni()->ExceptionDescribe();
+    fatal("Error calling jdk.vm.ci.services.Services.initializeSavedProperties");
+  }
 }
 
 JNIEnv* JVMCIEnv::attach_shared_library() {
   if (_shared_library_javavm == NULL) {
     MutexLocker locker(JVMCI_lock);
     if (_shared_library_javavm == NULL) {
+
       char path[JVM_MAXPATHLEN];
       char ebuf[1024];
       if (JVMCILibPath != NULL) {
@@ -175,7 +186,8 @@ JNIEnv* JVMCIEnv::attach_shared_library() {
       JavaVMInitArgs vm_args;
       vm_args.version = JNI_VERSION_1_2;
       vm_args.ignoreUnrecognized = JNI_TRUE;
-      init_shared_library_options(vm_args);
+      vm_args.options = NULL;
+      vm_args.nOptions = 0;
 
       JavaVM* the_javavm = NULL;
       int result = (*JNI_CreateJavaVM)(&the_javavm, (void**) &env, &vm_args);
@@ -200,9 +212,9 @@ JNIEnv* JVMCIEnv::attach_shared_library() {
 void JVMCIEnv::init_env_mode_runtime(JNIEnv* parent_env) {
   // By default there is only one runtime which is the compiler runtime.
   _runtime = JVMCI::compiler_runtime();
-  if (JVMCIGlobals::java_mode() == JVMCIGlobals::HotSpot) {
+  if (!UseJVMCINativeLibrary) {
     // In HotSpot mode, JNI isn't used at all.
-    _mode = JVMCIGlobals::HotSpot;
+    _is_hotspot = true;
     _env = NULL;
     return;
   }
@@ -214,14 +226,14 @@ void JVMCIEnv::init_env_mode_runtime(JNIEnv* parent_env) {
     if (thread->jni_environment() == parent_env) {
       // Select the Java runtime
       _runtime = JVMCI::java_runtime();
-      _mode = JVMCIGlobals::HotSpot;
+      _is_hotspot = true;
       _env = NULL;
       return;
     }
   }
 
   // Running in JVMCI shared library mode so get a shared library JNIEnv
-  _mode = JVMCIGlobals::SharedLibrary;
+  _is_hotspot = false;
   _env = attach_shared_library();
   assert(parent_env == NULL || _env == parent_env, "must be");
 
@@ -263,7 +275,7 @@ void JVMCIEnv::init(bool is_hotspot, const char* file, int line) {
   _line = line;
   if (is_hotspot) {
     _env = NULL;
-    _mode = JVMCIGlobals::HotSpot;
+    _is_hotspot = true;
     _runtime = JVMCI::java_runtime();
   } else {
     init_env_mode_runtime(NULL);
@@ -643,20 +655,33 @@ JVMCIObject JVMCIEnv::new_StackTraceElement(methodHandle method, int bci, JVMCI_
   }
 }
 
-JVMCIObject JVMCIEnv::new_HotSpotNmethod(methodHandle method, const char* name, jboolean isDefault, JVMCI_TRAPS) {
+JVMCIObject JVMCIEnv::new_HotSpotNmethod(methodHandle method, const char* name, jboolean isDefault, jlong compileId, JVMCI_TRAPS) {
   JavaThread* THREAD = JavaThread::current();
 
   JVMCIObject methodObject = get_jvmci_method(method(), JVMCI_CHECK_(JVMCIObject()));
 
   if (is_hotspot()) {
-    HotSpotJVMCI::HotSpotNmethod::klass()->initialize(CHECK_(JVMCIObject()));
-    oop obj = HotSpotJVMCI::HotSpotNmethod::klass()->allocate_instance(CHECK_(JVMCIObject()));
-
+    InstanceKlass* ik = InstanceKlass::cast(HotSpotJVMCI::HotSpotNmethod::klass());
+    if (ik->should_be_initialized()) {
+      ik->initialize(CHECK_(JVMCIObject()));
+    }
+    oop obj = ik->allocate_instance(CHECK_(JVMCIObject()));
+    Handle obj_h(THREAD, obj);
     Handle nameStr = java_lang_String::create_from_str(name, CHECK_(JVMCIObject()));
-    HotSpotJVMCI::InstalledCode::set_name(this, obj, nameStr());
-    HotSpotJVMCI::HotSpotNmethod::set_isDefault(this, obj, isDefault);
-    HotSpotJVMCI::HotSpotNmethod::set_method(this, obj, HotSpotJVMCI::resolve(methodObject));
-    return wrap(obj);
+
+    // Call constructor
+    JavaCallArguments jargs;
+    jargs.push_oop(obj_h);
+    jargs.push_oop(Handle(THREAD, HotSpotJVMCI::resolve(methodObject)));
+    jargs.push_oop(nameStr);
+    jargs.push_int(isDefault);
+    jargs.push_long(compileId);
+    JavaValue result(T_VOID);
+    JavaCalls::call_special(&result, ik,
+                            vmSymbols::object_initializer_name(),
+                            vmSymbols::method_string_bool_long_signature(),
+                            &jargs, CHECK_(JVMCIObject()));
+    return wrap(obj_h());
   } else {
     JNIAccessMark jni(this);
     jobject nameStr = name == NULL ? NULL : jni()->NewStringUTF(name);
@@ -664,8 +689,8 @@ JVMCIObject JVMCIEnv::new_HotSpotNmethod(methodHandle method, const char* name, 
       return JVMCIObject();
     }
 
-    jobject result = jni()->NewObject(JNIJVMCI::HotSpotNmethodHandle::clazz(),
-                                      JNIJVMCI::HotSpotNmethodHandle::constructor(),
+    jobject result = jni()->NewObject(JNIJVMCI::HotSpotNmethod::clazz(),
+                                      JNIJVMCI::HotSpotNmethod::constructor(),
                                       methodObject.as_jobject(), nameStr, isDefault);
     return wrap(result);
   }
@@ -901,6 +926,19 @@ JVMCIPrimitiveArray JVMCIEnv::new_byteArray(int length, JVMCI_TRAPS) {
   }
 }
 
+JVMCIObjectArray JVMCIEnv::new_byte_array_array(int length, JVMCI_TRAPS) {
+  if (is_hotspot()) {
+    JavaThread* THREAD = JavaThread::current();
+    Klass* byteArrayArrayKlass = TypeArrayKlass::cast(Universe::byteArrayKlassObj  ())->array_klass(CHECK_(JVMCIObject()));
+    objArrayOop result = ObjArrayKlass::cast(byteArrayArrayKlass) ->allocate(length, CHECK_(JVMCIObject()));
+    return wrap(result);
+  } else {
+    JNIAccessMark jni(this);
+    jobjectArray result = jni()->NewObjectArray(length, JNIJVMCI::byte_array(), NULL);
+    return wrap(result);
+  }
+}
+
 JVMCIPrimitiveArray JVMCIEnv::new_intArray(int length, JVMCI_TRAPS) {
   if (is_hotspot()) {
     JavaThread* THREAD = JavaThread::current();
@@ -1029,21 +1067,23 @@ JVMCIObject JVMCIEnv::get_object_constant(oop objOop, bool compressed, bool dont
 }
 
 
-oop JVMCIEnv::asConstant(JVMCIObject constant, JVMCI_TRAPS) {
+Handle JVMCIEnv::asConstant(JVMCIObject constant, JVMCI_TRAPS) {
   if (constant.is_null()) {
-    return NULL;
+    return Handle();
   }
+  JavaThread* THREAD = JavaThread::current();
   if (is_hotspot()) {
     assert(HotSpotJVMCI::DirectHotSpotObjectConstantImpl::is_instance(this, constant), "wrong type");
-    return HotSpotJVMCI::DirectHotSpotObjectConstantImpl::object(this, HotSpotJVMCI::resolve(constant));
+    oop obj = HotSpotJVMCI::DirectHotSpotObjectConstantImpl::object(this, HotSpotJVMCI::resolve(constant));
+    return Handle(THREAD, obj);
   } else {
     assert(isa_IndirectHotSpotObjectConstantImpl(constant), "wrong type");
     jlong object_handle = get_IndirectHotSpotObjectConstantImpl_objectHandle(constant);
     oop result = resolve_handle(object_handle);
     if (result == NULL) {
-      JVMCI_THROW_MSG_NULL(InternalError, "Constant was unexpectedly NULL");
+      JVMCI_THROW_MSG_(InternalError, "Constant was unexpectedly NULL", Handle());
     }
-    return result;
+    return Handle(THREAD, result);
   }
 }
 
@@ -1131,9 +1171,6 @@ void JVMCIEnv::initialize_installed_code(JVMCIObject installed_code, CodeBlob* c
     if (nm->is_in_use()) {
       set_InstalledCode_entryPoint(installed_code, (jlong) nm->verified_entry_point());
     }
-    if (isa_HotSpotNmethodHandle(installed_code)) {
-      set_HotSpotNmethodHandle_compileId(installed_code, nm->compile_id());
-    }
   } else {
     set_InstalledCode_entryPoint(installed_code, (jlong) cb->code_begin());
   }
@@ -1144,20 +1181,20 @@ void JVMCIEnv::initialize_installed_code(JVMCIObject installed_code, CodeBlob* c
 }
 
 
-void JVMCIEnv::invalidate_nmethod_mirror(JVMCIObject nmethod_mirror, JVMCI_TRAPS) {
-  if (nmethod_mirror.is_null()) {
+void JVMCIEnv::invalidate_nmethod_mirror(JVMCIObject mirror, JVMCI_TRAPS) {
+  if (mirror.is_null()) {
     JVMCI_THROW(NullPointerException);
   }
 
-  jlong nativeMethod = get_InstalledCode_address(nmethod_mirror);
-  nmethod* nm = (nmethod*)nativeMethod;
+  jlong nativeMethod = get_InstalledCode_address(mirror);
+  nmethod* nm = JVMCIENV->asNmethod(mirror);
   if (nm == NULL) {
     // Nothing to do
     return;
   }
 
   Thread* THREAD = Thread::current();
-  if (!nmethod_mirror.is_hotspot() && !THREAD->is_Java_thread()) {
+  if (!mirror.is_hotspot() && !THREAD->is_Java_thread()) {
     // Calling back into native might cause the execution to block, so only allow this when calling
     // from a JavaThread, which is the normal case anyway.
     JVMCI_THROW_MSG(IllegalArgumentException,
@@ -1175,7 +1212,7 @@ void JVMCIEnv::invalidate_nmethod_mirror(JVMCIObject nmethod_mirror, JVMCI_TRAPS
 
   // A HotSpotNmethod instance can only reference a single nmethod
   // during its lifetime so simply clear it here.
-  set_InstalledCode_address(nmethod_mirror, 0);
+  set_InstalledCode_address(mirror, 0);
 }
 
 Klass* JVMCIEnv::asKlass(JVMCIObject obj) {
@@ -1198,33 +1235,35 @@ CodeBlob* JVMCIEnv::asCodeBlob(JVMCIObject obj) {
   if (code == NULL) {
     return NULL;
   }
-  if (isa_HotSpotNmethodHandle(obj)) {
-    // The state of HotSpotNMethodHandles are updated cooperatively so
-    // safely find the original nmethod* and then update the fields
-    // based on its state.
-    CodeBlob* cb = CodeCache::find_blob_unsafe(code);
-    if (cb == (CodeBlob*) code) {
-      // Found a live CodeBlob with the same address, make sure it's the same nmethod
-      nmethod* nm = cb->as_nmethod_or_null();
-      long compile_id = get_HotSpotNmethodHandle_compileId(obj);
-      if (nm != NULL && nm->compile_id() == compile_id) {
-        if (!nm->is_alive()) {
-          // Break the link to the nmethod so that the instance is no
-          // longer alive.
-          set_InstalledCode_address(obj, 0);
-          set_InstalledCode_entryPoint(obj, 0);
-        } else if (nm->is_not_entrant()) {
-          // Zero the entry point so that it appears invalid but keep
-          // the address so that it still is alive.
-          set_InstalledCode_entryPoint(obj, 0);
+  if (isa_HotSpotNmethod(obj)) {
+    jlong compile_id_snapshot = get_HotSpotNmethod_compileIdSnapshot(obj);
+    if (compile_id_snapshot != 0L) {
+      // A HotSpotNMethod not in an nmethod's oops table so look up
+      // the nmethod and then update the fields based on its state.
+      CodeBlob* cb = CodeCache::find_blob_unsafe(code);
+      if (cb == (CodeBlob*) code) {
+        // Found a live CodeBlob with the same address, make sure it's the same nmethod
+        nmethod* nm = cb->as_nmethod_or_null();
+        if (nm != NULL && nm->compile_id() == compile_id_snapshot) {
+          if (!nm->is_alive()) {
+            // Break the links from the mirror to the nmethod
+            set_InstalledCode_address(obj, 0);
+            set_InstalledCode_entryPoint(obj, 0);
+          } else if (nm->is_not_entrant()) {
+            // Zero the entry point so that the nmethod
+            // cannot be invoked by the mirror but can
+            // still be deoptimized.
+            set_InstalledCode_entryPoint(obj, 0);
+          }
+          return cb;
         }
-        return cb;
       }
+      // Clear the InstalledCode fields of this HotSpotNmethod
+      // that no longer refers to an nmethod in the code cache.
+      set_InstalledCode_address(obj, 0);
+      set_InstalledCode_entryPoint(obj, 0);
+      return NULL;
     }
-    // Clear the InstalledCode fields of this HotSpotNmethodHandle
-    set_InstalledCode_address(obj, 0);
-    set_InstalledCode_entryPoint(obj, 0);
-    return NULL;
   }
   return (CodeBlob*) code;
 }

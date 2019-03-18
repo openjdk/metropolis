@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000, 2018, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2000, 2019, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -30,7 +30,6 @@
 #include "utilities/ostream.hpp"
 #include "runtime/globals_extension.hpp"
 
-JVMCIGlobals::JavaMode JVMCIGlobals::_java_mode = HotSpot;
 fileStream* JVMCIGlobals::_jni_config_file = NULL;
 
 JVMCI_FLAGS(MATERIALIZE_DEVELOPER_FLAG, \
@@ -83,6 +82,10 @@ bool JVMCIGlobals::check_jvmci_flags_are_consistent() {
       return false;
     }
     FLAG_SET_DEFAULT(EnableJVMCI, true);
+    if (BootstrapJVMCI && UseJVMCINativeLibrary) {
+      jio_fprintf(defaultStream::error_stream(), "-XX:+BootstrapJVMCI is not compatible with -XX:+UseJVMCINativeLibrary");
+      return false;
+    }
   }
 
   if (!EnableJVMCI) {
@@ -92,6 +95,7 @@ bool JVMCIGlobals::check_jvmci_flags_are_consistent() {
       FLAG_SET_DEFAULT(EagerJVMCI, false);
     }
   }
+  JVMCI_FLAG_CHECKED(TraceClassLoadingCause)
   JVMCI_FLAG_CHECKED(EagerJVMCI)
 
   CHECK_NOT_SET(JVMCITraceLevel,              EnableJVMCI)
@@ -101,11 +105,8 @@ bool JVMCIGlobals::check_jvmci_flags_are_consistent() {
   CHECK_NOT_SET(JVMCINMethodSizeLimit,        EnableJVMCI)
   CHECK_NOT_SET(MethodProfileWidth,           EnableJVMCI)
   CHECK_NOT_SET(JVMCIPrintProperties,         EnableJVMCI)
-  CHECK_NOT_SET(TraceUncollectedSpeculations, EnableJVMCI)
   CHECK_NOT_SET(UseJVMCINativeLibrary,        EnableJVMCI)
   CHECK_NOT_SET(JVMCILibPath,                 EnableJVMCI)
-  CHECK_NOT_SET(JVMCILibArgs,                 EnableJVMCI)
-  CHECK_NOT_SET(JVMCILibArgsSep,              EnableJVMCI)
   CHECK_NOT_SET(JVMCILibDumpJNIConfig,        EnableJVMCI)
 
 #ifndef PRODUCT
@@ -131,12 +132,6 @@ bool JVMCIGlobals::check_jvmci_flags_are_consistent() {
     }
   }
 
-  if (strlen(JVMCILibArgsSep) != 1) {
-    jio_fprintf(defaultStream::error_stream(),
-        "Length of -XX:JVMCILibArgsSep value must be 1: \"%s\"\n", JVMCILibArgsSep);
-    return false;
-  }
-
   return true;
 }
 
@@ -147,21 +142,6 @@ void JVMCIGlobals::check_jvmci_supported_gc() {
       vm_exit_during_initialization("JVMCI Compiler does not support selected GC", GCConfig::hs_err_name());
       FLAG_SET_DEFAULT(EnableJVMCI, false);
       FLAG_SET_DEFAULT(UseJVMCICompiler, false);
-    }
-  }
-}
-
-void JVMCIGlobals::init_java_mode_from_flags() {
-  if (EnableJVMCI) {
-    if (!UseJVMCINativeLibrary) {
-      _java_mode = HotSpot;
-    } else {
-      _java_mode = SharedLibrary;
-
-      // Make JVMCI initialization eager if loaded from a shared library
-      if (FLAG_IS_DEFAULT(EagerJVMCI)) {
-        FLAG_SET_DEFAULT(EagerJVMCI, true);
-      }
     }
   }
 }

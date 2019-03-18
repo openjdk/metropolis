@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2018, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2015, 2019, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -48,7 +48,6 @@ import java.util.ServiceLoader;
 import java.util.TreeMap;
 import java.util.function.Predicate;
 
-import jdk.internal.misc.VM;
 import jdk.internal.misc.Unsafe;
 
 import jdk.vm.ci.code.Architecture;
@@ -256,7 +255,7 @@ public final class HotSpotJVMCIRuntime implements JVMCIRuntime {
         @SuppressFBWarnings(value = "ES_COMPARING_STRINGS_WITH_EQ", justification = "sentinel must be String since it's a static final in an enum")
         private Object getValue() {
             if (value == UNINITIALIZED) {
-                String propertyValue = VM.getSavedProperty(getPropertyName());
+                String propertyValue = Services.getSavedProperties().get(getPropertyName());
                 if (propertyValue == null) {
                     this.value = defaultValue;
                     this.isDefault = true;
@@ -739,6 +738,10 @@ assert factories != null : "sanity";
      */
     @VMEntryPoint
     private void shutdown() throws Exception {
+        // Cleaners are normally only processed when a new Cleaner is
+        // instantiated so process all remaining cleaners now.
+        Cleaner.clean();
+
         for (HotSpotVMEventListener vmEventListener : getVmEventListeners()) {
             vmEventListener.notifyShutdown();
         }

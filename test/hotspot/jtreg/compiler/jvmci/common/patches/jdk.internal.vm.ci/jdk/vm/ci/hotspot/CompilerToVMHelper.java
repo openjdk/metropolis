@@ -168,7 +168,16 @@ public class CompilerToVMHelper {
 
     public static int installCode(TargetDescription target,
             HotSpotCompiledCode compiledCode, InstalledCode code, HotSpotSpeculationLog speculationLog) {
-        return CTVM.installCode(target, compiledCode, code, speculationLog);
+        byte[] speculations;
+        long failedSpeculationsAddress;
+        if (speculationLog != null) {
+            speculations = speculationLog.getFlattenedSpeculations(true);
+            failedSpeculationsAddress = speculationLog.getFailedSpeculationsAddress();
+        } else {
+            speculations = new byte[0];
+            failedSpeculationsAddress = 0L;
+        }
+        return CTVM.installCode(target, compiledCode, code, failedSpeculationsAddress, speculations);
     }
 
     public static int getMetadata(TargetDescription target,

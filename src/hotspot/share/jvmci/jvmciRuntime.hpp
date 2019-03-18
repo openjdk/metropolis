@@ -34,83 +34,55 @@ class JVMCIObject;
 class JVMCIEnv;
 class JVMCICompileState;
 
-// Encapsulates the JVMCI metadata associated with an nmethod.
-class JVMCINMethodData: public CHeapObj<mtCompiler> {
-  // Weak reference to the SpeculationLog mirror in either
-  // the HotSpot or JVMCI shared library heap.
-  JVMCIObject _speculation_log;
+// Encapsulates the JVMCI metadata for an nmethod.
+// JVMCINMethodData objects are inlined into nmethods
+// at nmethod::_jvmci_data_offset.
+class JVMCINMethodData {
+  // Index for the HotSpotNmethod mirror in the nmethod's oops table.
+  // This is -1 if there is no mirror in the oops table.
+  int _nmethod_mirror_index;
 
-  // Value of HotSpotNmethod.name converted to a C string.
-  const char* _nmethod_mirror_name;
+  // Is HotSpotNmethod.name non-null? If so, the value is
+  // embedded in the end of this object.
+  bool _has_name;
 
-  // Weak reference to the HotSpotNmethod mirror in the HotSpot heap.
-  JVMCIObject _nmethod_mirror;
+  // Address of the failed speculations list to which a speculation
+  // is appended when it causes a deoptimization.
+  FailedSpeculation** _failed_speculations;
 
-  // Determines whether the associated nmethod is invalidated when the
-  // referent in _nmethod_mirror is cleared.  This will be false if
-  // the referent is initialized to a HotSpotNmethod object whose
-  // isDefault field is true.  That is, a mirror other than a
-  // "default" HotSpotNmethod causes nmethod invalidation.  See
-  // HotSpotNmethod.isDefault for more detail.
-  bool _triggers_invalidation;
+public:
+  // Computes the size of a JVMCINMethodData object
+  static int compute_size(const char* nmethod_mirror_name) {
+    int size = sizeof(JVMCINMethodData);
+    if (nmethod_mirror_name != NULL) {
+      size += (int) strlen(nmethod_mirror_name) + 1;
+    }
+    return size;
+  }
 
-  // Used to maintain the linked list held by the _for_release field
-  JVMCINMethodData* _next;
+  void initialize(int nmethod_mirror_index,
+             const char* name,
+             FailedSpeculation** failed_speculations);
 
-  // Maintains a list of JVMCINMethodDatas that require cleanup on the
-  // next call to installCode. This field must be updated under
-  // the JVMCI_lock.
-  static JVMCINMethodData* volatile _for_release;
+  // Adds `speculation` to the failed speculations list.
+  void add_failed_speculation(nmethod* nm, jlong speculation);
 
- public:
-  JVMCINMethodData(JVMCIEnv* jvmciEnv, JVMCIObject nmethod_mirror, JVMCIObject speculation_log, bool triggers_invalidation);
+  // Gets the JVMCI name of the nmethod (which may be NULL).
+  const char* name() { return _has_name ? (char*)(((address) this) + sizeof(JVMCINMethodData)) : NULL; }
 
-  // Releases all resources held by this object.
-  ~JVMCINMethodData();
+  // Clears the HotSpotNmethod.address field in the  mirror. If nm
+  // is dead, the HotSpotNmethod.entryPoint field is also cleared.
+  void invalidate_nmethod_mirror(nmethod* nm);
 
-  // Release the data object or queue it for lazy cleanup.
-  // If the data object contains non-null references to objects
-  // in the shared library heap, cleanup is deferred since
-  // processing these references can block on the ThreadToNativeFromVM
-  // transition calling into the shared library.
-  static void release(JVMCINMethodData* data);
+  // Gets the mirror from nm's oops table.
+  oop get_nmethod_mirror(nmethod* nm);
 
-  // Release any instances which require lazy cleanup.
-  static void cleanup();
+  // Sets the mirror in nm's oops table.
+  void set_nmethod_mirror(nmethod* nm, oop mirror);
 
-  // Gets the value of HotSpotNmethod.name converted to a C string (which may be NULL).
-  const char* nmethod_mirror_name() { return _nmethod_mirror_name; }
-
-  // Clears the `address` field in the HotSpotNmethod mirror. If the nmethod
-  // is no longer alive, the `entryPoint` field is also cleared, the weak
-  // reference to the mirror is released (e.g., JNI DeleteWeakGlobalRef)
-  // and the speculation log is cleared.
-  void invalidate_mirror(nmethod* nm);
-
-  // Process the HotSpotNmethod mirror during the nmethod unloading
-  // phase of a HotSpot GC. If the weak reference to the mirror is
-  // null and _triggers_invalidation is true, then the nmethod is made non-entrant.
-  void update_nmethod_mirror_in_gc(nmethod* nm);
-
-  // Records the pending failed speculation (if any) in the
-  // speculation log (if it exists).
-  void update_speculation(JavaThread* thread, nmethod* nm);
-
-  // Gets the HotSpotNmethod mirror in the HotSpot heap
-  JVMCIObject get_nmethod_mirror();
-
-  // Adds a HotSpotNmethod mirror.
-  void add_nmethod_mirror(JVMCIEnv* jvmciEnv, JVMCIObject mirror, JVMCI_TRAPS);
-
-  // Deletes the weak reference (if any) to the HotSpotNmethod object
-  // associated with this nmethod.
-  void clear_nmethod_mirror();
-
-  // Deletes the weak reference (if any) to the SpeculationLog object
-  // associated with this nmethod.
-  void clear_speculation_log(bool force = false);
+  // Clears the mirror in nm's oops table.
+  void clear_nmethod_mirror(nmethod* nm);
 };
-
 
 // A top level class that represents an initialized JVMCI runtime.
 // There is one instance of this class per HotSpotJVMCIRuntime object.
@@ -274,9 +246,11 @@ class JVMCIRuntime: public CHeapObj<mtCompiler> {
                        int                       compile_id,
                        bool                      has_unsafe_access,
                        bool                      has_wide_vector,
-                       JVMCIObject              compiled_code,
-                       JVMCIObject              nmethod_mirror,
-                       JVMCIObject              speculation_log);
+                       JVMCIObject               compiled_code,
+                       JVMCIObject               nmethod_mirror,
+                       FailedSpeculation**       failed_speculations,
+                       char*                     speculations,
+                       int                       speculations_len);
 
   /**
    * Exits the VM due to an unexpected exception.
@@ -320,16 +294,6 @@ class JVMCIRuntime: public CHeapObj<mtCompiler> {
     return result; \
   } \
   (void)(0
-
-  /**
-   * Same as SystemDictionary::resolve_or_null but uses the JVMCI loader.
-   */
-  static Klass* resolve_or_null(Symbol* name, TRAPS);
-
-  /**
-   * Same as SystemDictionary::resolve_or_fail but uses the JVMCI loader.
-   */
-  static Klass* resolve_or_fail(Symbol* name, TRAPS);
 
   static BasicType kindToBasicType(Handle kind, TRAPS);
 

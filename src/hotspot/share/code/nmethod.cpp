@@ -113,6 +113,10 @@ struct java_nmethod_stats_struct {
   int dependencies_size;
   int handler_table_size;
   int nul_chk_table_size;
+#if INCLUDE_JVMCI
+  int speculations_size;
+  int jvmci_data_size;
+#endif
   int oops_size;
   int metadata_size;
 
@@ -130,6 +134,10 @@ struct java_nmethod_stats_struct {
     dependencies_size   += nm->dependencies_size();
     handler_table_size  += nm->handler_table_size();
     nul_chk_table_size  += nm->nul_chk_table_size();
+#if INCLUDE_JVMCI
+    speculations_size   += nm->speculations_size();
+    jvmci_data_size     += nm->jvmci_data_size();
+#endif
   }
   void print_nmethod_stats(const char* name) {
     if (nmethod_count == 0)  return;
@@ -147,6 +155,10 @@ struct java_nmethod_stats_struct {
     if (dependencies_size != 0)   tty->print_cr(" dependencies   = %d", dependencies_size);
     if (handler_table_size != 0)  tty->print_cr(" handler table  = %d", handler_table_size);
     if (nul_chk_table_size != 0)  tty->print_cr(" nul chk table  = %d", nul_chk_table_size);
+#if INCLUDE_JVMCI
+    if (speculations_size != 0)   tty->print_cr(" speculations   = %d", speculations_size);
+    if (jvmci_data_size != 0)     tty->print_cr(" JVMCI data     = %d", jvmci_data_size);
+#endif
   }
 };
 
@@ -429,9 +441,6 @@ void nmethod::init_defaults() {
 #if INCLUDE_RTM_OPT
   _rtm_state               = NoRTM;
 #endif
-#if INCLUDE_JVMCI
-  _jvmci_nmethod_data      = NULL;
-#endif
 }
 
 nmethod* nmethod::new_native_nmethod(const methodHandle& method,
@@ -484,7 +493,11 @@ nmethod* nmethod::new_nmethod(const methodHandle& method,
   AbstractCompiler* compiler,
   int comp_level
 #if INCLUDE_JVMCI
- , JVMCINMethodData* jvmci_nmethod_data
+  , char* speculations,
+  int speculations_len,
+  int nmethod_mirror_index,
+  const char* nmethod_mirror_name,
+  FailedSpeculation** failed_speculations
 #endif
 )
 {
@@ -493,12 +506,19 @@ nmethod* nmethod::new_nmethod(const methodHandle& method,
   // create nmethod
   nmethod* nm = NULL;
   { MutexLockerEx mu(CodeCache_lock, Mutex::_no_safepoint_check_flag);
+#if INCLUDE_JVMCI
+    int jvmci_data_size = JVMCINMethodData::compute_size(nmethod_mirror_name);
+#endif
     int nmethod_size =
       CodeBlob::allocation_size(code_buffer, sizeof(nmethod))
       + adjust_pcs_size(debug_info->pcs_size())
       + align_up((int)dependencies->size_in_bytes(), oopSize)
       + align_up(handler_table->size_in_bytes()    , oopSize)
       + align_up(nul_chk_table->size_in_bytes()    , oopSize)
+#if INCLUDE_JVMCI
+      + align_up(speculations_len                  , oopSize)
+      + align_up(jvmci_data_size                   , oopSize)
+#endif
       + align_up(debug_info->data_size()           , oopSize);
 
     nm = new (nmethod_size, comp_level)
@@ -510,11 +530,17 @@ nmethod* nmethod::new_nmethod(const methodHandle& method,
             compiler,
             comp_level
 #if INCLUDE_JVMCI
-            , jvmci_nmethod_data
+            , speculations,
+            speculations_len,
+            jvmci_data_size
 #endif
             );
 
     if (nm != NULL) {
+#if INCLUDE_JVMCI
+      // Initialize the JVMCINMethodData object inlined into nm
+      nm->jvmci_nmethod_data()->initialize(nmethod_mirror_index, nmethod_mirror_name, failed_speculations);
+#endif
       // To make dependency checking during class loading fast, record
       // the nmethod dependencies in the classes it is dependent on.
       // This allows the dependency checking code to simply walk the
@@ -590,7 +616,13 @@ nmethod::nmethod(
     _dependencies_offset     = _scopes_pcs_offset;
     _handler_table_offset    = _dependencies_offset;
     _nul_chk_table_offset    = _handler_table_offset;
+#if INCLUDE_JVMCI
+    _speculations_offset     = _nul_chk_table_offset;
+    _jvmci_data_offset       = _speculations_offset;
+    _nmethod_end_offset      = _jvmci_data_offset;
+#else
     _nmethod_end_offset      = _nul_chk_table_offset;
+#endif
     _compile_id              = compile_id;
     _comp_level              = CompLevel_none;
     _entry_point             = code_begin()          + offsets->value(CodeOffsets::Entry);
@@ -666,7 +698,9 @@ nmethod::nmethod(
   AbstractCompiler* compiler,
   int comp_level
 #if INCLUDE_JVMCI
- , JVMCINMethodData* jvmci_nmethod_data
+  , char* speculations,
+  int speculations_len,
+  int jvmci_data_size
 #endif
   )
   : CompiledMethod(method, "nmethod", type, nmethod_size, sizeof(nmethod), code_buffer, offsets->value(CodeOffsets::Frame_Complete), frame_size, oop_maps, false),
@@ -695,7 +729,6 @@ nmethod::nmethod(
     set_ctable_begin(header_begin() + _consts_offset);
 
 #if INCLUDE_JVMCI
-    _jvmci_nmethod_data = jvmci_nmethod_data;
     if (compiler->is_jvmci()) {
       // JVMCI might not produce any stub sections
       if (offsets->value(CodeOffsets::Exceptions) != -1) {
@@ -743,7 +776,13 @@ nmethod::nmethod(
     _dependencies_offset     = _scopes_pcs_offset    + adjust_pcs_size(debug_info->pcs_size());
     _handler_table_offset    = _dependencies_offset  + align_up((int)dependencies->size_in_bytes (), oopSize);
     _nul_chk_table_offset    = _handler_table_offset + align_up(handler_table->size_in_bytes(), oopSize);
+#if INCLUDE_JVMCI
+    _speculations_offset     = _nul_chk_table_offset + align_up(nul_chk_table->size_in_bytes(), oopSize);
+    _jvmci_data_offset       = _speculations_offset  + align_up(speculations_len, oopSize);
+    _nmethod_end_offset      = _jvmci_data_offset    + align_up(jvmci_data_size, oopSize);
+#else
     _nmethod_end_offset      = _nul_chk_table_offset + align_up(nul_chk_table->size_in_bytes(), oopSize);
+#endif
     _entry_point             = code_begin()          + offsets->value(CodeOffsets::Entry);
     _verified_entry_point    = code_begin()          + offsets->value(CodeOffsets::Verified_Entry);
     _osr_entry_point         = code_begin()          + offsets->value(CodeOffsets::OSR_Entry);
@@ -770,6 +809,13 @@ nmethod::nmethod(
     handler_table->copy_to(this);
     nul_chk_table->copy_to(this);
 
+#if INCLUDE_JVMCI
+    // Copy speculations to nmethod
+    if (speculations_size() != 0) {
+      memcpy(speculations_begin(), speculations, speculations_len);
+    }
+#endif
+
     // we use the information of entry points to find out if a method is
     // static or non static
     assert(compiler->is_c2() || compiler->is_jvmci() ||
@@ -789,10 +835,10 @@ void nmethod::log_identity(xmlStream* log) const {
     log->print(" level='%d'", comp_level());
   }
 #if INCLUDE_JVMCI
-  if (_jvmci_nmethod_data != NULL) {
-    const char* jvmci_name = _jvmci_nmethod_data->nmethod_mirror_name();
+  if (jvmci_nmethod_data() != NULL) {
+    const char* jvmci_name = jvmci_nmethod_data()->name();
     if (jvmci_name != NULL) {
-      log->print(" jvmci_nmethod_mirror_name='");
+      log->print(" jvmci_mirror_name='");
       log->text("%s", jvmci_name);
       log->print("'");
     }
@@ -1104,13 +1150,6 @@ void nmethod::make_unloaded() {
   // Log the unloading.
   log_state_change();
 
-#if INCLUDE_JVMCI
-  // The method can only be unloaded after the HotSpotNmethod mirror
-  // are no longer alive. Here we need to clear out the weak
-  // references to the dead objects.
-  maybe_invalidate_jvmci_mirror();
-#endif
-
   // The Method* is gone at this point
   assert(_method == NULL, "Tautology");
 
@@ -1123,6 +1162,15 @@ void nmethod::make_unloaded() {
   // concurrent nmethod unloading. Therefore, there is no need for
   // acquire on the loader side.
   OrderAccess::release_store(&_state, (signed char)unloaded);
+
+#if INCLUDE_JVMCI
+  // Clear the link between this nmethod and a HotSpotNmethod mirror
+  JVMCINMethodData* nmethod_data = jvmci_nmethod_data();
+  if (nmethod_data != NULL) {
+    nmethod_data->invalidate_nmethod_mirror(this);
+    nmethod_data->clear_nmethod_mirror(this);
+  }
+#endif
 }
 
 void nmethod::invalidate_osr_method() {
@@ -1258,6 +1306,14 @@ bool nmethod::make_not_entrant_or_zombie(int state) {
     unlink_from_method(false /* already owns Patching_lock */);
   } // leave critical region under Patching_lock
 
+#if INCLUDE_JVMCI
+  // Invalidate can't occur while holding the Patching lock
+  JVMCINMethodData* nmethod_data = jvmci_nmethod_data();
+  if (nmethod_data != NULL) {
+    nmethod_data->invalidate_nmethod_mirror(this);
+  }
+#endif
+
 #ifdef ASSERT
   if (is_osr_method() && method() != NULL) {
     // Make sure osr nmethod is invalidated, i.e. not on the list
@@ -1265,9 +1321,6 @@ bool nmethod::make_not_entrant_or_zombie(int state) {
     assert(!found, "osr nmethod should have been invalidated");
   }
 #endif
-
-  // Invalidate can't occur while holding the Patching lock
-  JVMCI_ONLY(maybe_invalidate_jvmci_mirror());
 
   // When the nmethod becomes zombie it is no longer alive so the
   // dependencies must be flushed.  nmethods in the not_entrant
@@ -1284,6 +1337,14 @@ bool nmethod::make_not_entrant_or_zombie(int state) {
       }
       flush_dependencies(/*delete_immediately*/true);
     }
+
+#if INCLUDE_JVMCI
+    // Now that the nmethod has been unregistered, it's
+    // safe to clear the HotSpotNmethod mirror oop.
+    if (nmethod_data != NULL) {
+      nmethod_data->clear_nmethod_mirror(this);
+    }
+#endif
 
     // Clear ICStubs to prevent back patching stubs of zombie or flushed
     // nmethods during the next safepoint (see ICStub::finalize), as well
@@ -1353,10 +1414,6 @@ void nmethod::flush() {
   if (on_scavenge_root_list()) {
     CodeCache::drop_scavenge_root_nmethod(this);
   }
-
-#if INCLUDE_JVMCI
-  assert(_jvmci_nmethod_data == NULL, "should have been nulled out when transitioned to zombie");
-#endif
 
   Universe::heap()->flush_nmethod(this);
 
@@ -1651,12 +1708,6 @@ void nmethod::do_unloading(bool unloading_occurred) {
   if (is_unloading()) {
     make_unloaded();
   } else {
-#if INCLUDE_JVMCI
-    if (_jvmci_nmethod_data != NULL) {
-      _jvmci_nmethod_data->update_nmethod_mirror_in_gc(this);
-    }
-#endif
-
     guarantee(unload_nmethod_caches(unloading_occurred),
               "Should not need transition stubs");
   }
@@ -2361,6 +2412,16 @@ void nmethod::print() const {
                                               p2i(nul_chk_table_begin()),
                                               p2i(nul_chk_table_end()),
                                               nul_chk_table_size());
+#if INCLUDE_JVMCI
+  if (speculations_size () > 0) tty->print_cr(" speculations   [" INTPTR_FORMAT "," INTPTR_FORMAT "] = %d",
+                                              p2i(speculations_begin()),
+                                              p2i(speculations_end()),
+                                              speculations_size());
+  if (jvmci_data_size   () > 0) tty->print_cr(" JVMCI data     [" INTPTR_FORMAT "," INTPTR_FORMAT "] = %d",
+                                              p2i(jvmci_data_begin()),
+                                              p2i(jvmci_data_end()),
+                                              jvmci_data_size());
+#endif
 }
 
 #ifndef PRODUCT
@@ -2943,25 +3004,18 @@ void nmethod::print_statistics() {
 #endif // !PRODUCT
 
 #if INCLUDE_JVMCI
-void nmethod::maybe_invalidate_jvmci_mirror() {
-  if (_jvmci_nmethod_data != NULL) {
-    _jvmci_nmethod_data->invalidate_mirror(this);
-    if (!is_alive()) {
-      JVMCINMethodData::release(_jvmci_nmethod_data);
-      _jvmci_nmethod_data = NULL;
-    }
-  }
-}
-
 void nmethod::update_speculation(JavaThread* thread) {
-  if (_jvmci_nmethod_data != NULL) {
-    _jvmci_nmethod_data->update_speculation(thread, this);
+  jlong speculation = thread->pending_failed_speculation();
+  if (speculation != 0) {
+    guarantee(jvmci_nmethod_data() != NULL, "failed speculation in nmethod without failed speculation list");
+    jvmci_nmethod_data()->add_failed_speculation(this, speculation);
+    thread->set_pending_failed_speculation(0);
   }
 }
 
-const char* nmethod::jvmci_nmethod_mirror_name() {
-  if (_jvmci_nmethod_data != NULL) {
-    return _jvmci_nmethod_data->nmethod_mirror_name();
+const char* nmethod::jvmci_name() {
+  if (jvmci_nmethod_data() != NULL) {
+    return jvmci_nmethod_data()->name();
   }
   return NULL;
 }

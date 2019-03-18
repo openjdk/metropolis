@@ -51,8 +51,13 @@ class DebugInformationRecorder;
 //  - handler entry point array
 //  [Implicit Null Pointer exception table]
 //  - implicit null table array
+//  [Speculations]
+//  - encoded speculations array
+//  [JVMCINMethodData]
+//  - meta data for JVMCI compiled nmethod
 
 #if INCLUDE_JVMCI
+class FailedSpeculation;
 class JVMCINMethodData;
 #endif
 
@@ -67,10 +72,6 @@ class nmethod : public CompiledMethod {
   // Shared fields for all nmethod's
   int       _entry_bci;        // != InvocationEntryBci if this nmethod is an on-stack replacement method
   jmethodID _jmethod_id;       // Cache of method()->jmethod_id()
-
-#if INCLUDE_JVMCI
-  JVMCINMethodData* _jvmci_nmethod_data;
-#endif
 
   // To support simple linked-list chaining of nmethods:
   nmethod*  _osr_link;         // from InstanceKlass::osr_nmethods_head
@@ -97,6 +98,10 @@ class nmethod : public CompiledMethod {
   int _dependencies_offset;
   int _handler_table_offset;
   int _nul_chk_table_offset;
+#if INCLUDE_JVMCI
+  int _speculations_offset;
+  int _jvmci_data_offset;
+#endif
   int _nmethod_end_offset;
 
   int code_offset() const { return (address) code_begin() - header_begin(); }
@@ -199,7 +204,9 @@ class nmethod : public CompiledMethod {
           AbstractCompiler* compiler,
           int comp_level
 #if INCLUDE_JVMCI
-          , JVMCINMethodData* jvmci_nmethod_data
+          , char* speculations,
+          int speculations_len,
+          int jvmci_data_size
 #endif
           );
 
@@ -242,7 +249,11 @@ class nmethod : public CompiledMethod {
                               AbstractCompiler* compiler,
                               int comp_level
 #if INCLUDE_JVMCI
-                              , JVMCINMethodData* jvmci_nmethod_data = NULL
+                              , char* speculations = NULL,
+                              int speculations_len = 0,
+                              int nmethod_mirror_index = -1,
+                              const char* nmethod_mirror_name = NULL,
+                              FailedSpeculation** failed_speculations = NULL
 #endif
   );
 
@@ -289,12 +300,24 @@ class nmethod : public CompiledMethod {
   address handler_table_begin   () const          { return           header_begin() + _handler_table_offset ; }
   address handler_table_end     () const          { return           header_begin() + _nul_chk_table_offset ; }
   address nul_chk_table_begin   () const          { return           header_begin() + _nul_chk_table_offset ; }
+#if INCLUDE_JVMCI
+  address nul_chk_table_end     () const          { return           header_begin() + _speculations_offset  ; }
+  address speculations_begin    () const          { return           header_begin() + _speculations_offset  ; }
+  address speculations_end      () const          { return           header_begin() + _jvmci_data_offset   ; }
+  address jvmci_data_begin      () const          { return           header_begin() + _jvmci_data_offset    ; }
+  address jvmci_data_end        () const          { return           header_begin() + _nmethod_end_offset   ; }
+#else
   address nul_chk_table_end     () const          { return           header_begin() + _nmethod_end_offset   ; }
+#endif
 
   // Sizes
   int oops_size         () const                  { return (address)  oops_end         () - (address)  oops_begin         (); }
   int metadata_size     () const                  { return (address)  metadata_end     () - (address)  metadata_begin     (); }
   int dependencies_size () const                  { return            dependencies_end () -            dependencies_begin (); }
+#if INCLUDE_JVMCI
+  int speculations_size () const                  { return            speculations_end () -            speculations_begin (); }
+  int jvmci_data_size   () const                  { return            jvmci_data_end   () -            jvmci_data_begin   (); }
+#endif
 
   int     oops_count() const { assert(oops_size() % oopSize == 0, "");  return (oops_size() / oopSize) + 1; }
   int metadata_count() const { assert(metadata_size() % wordSize == 0, ""); return (metadata_size() / wordSize) + 1; }
@@ -454,19 +477,16 @@ public:
   void set_method(Method* method) { _method = method; }
 
 #if INCLUDE_JVMCI
-  // Return the name of the HotSpotNmethod mirror (if any).
-  const char* jvmci_nmethod_mirror_name();
-
-  // Updates the state of the HotSpotNmethod and SpeculationLog
-  // references associated with this nmethod based on the current
-  // value of _state.
-  void maybe_invalidate_jvmci_mirror();
+  // Gets the JVMCI name of this nmethod.
+  const char* jvmci_name();
 
   // Records the pending failed speculation in the
   // JVMCI speculation log associated with this nmethod.
   void update_speculation(JavaThread* thread);
 
-  JVMCINMethodData* jvmci_nmethod_data() { return _jvmci_nmethod_data; }
+  JVMCINMethodData* jvmci_nmethod_data() const {
+    return jvmci_data_size() == 0 ? NULL : (JVMCINMethodData*) jvmci_data_begin();
+  }
 #endif
 
  public:

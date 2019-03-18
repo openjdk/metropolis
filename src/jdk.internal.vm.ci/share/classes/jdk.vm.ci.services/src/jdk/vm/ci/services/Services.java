@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, 2018, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2014, 2019, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -22,7 +22,11 @@
  */
 package jdk.vm.ci.services;
 
-import java.lang.reflect.Method;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Formatter;
@@ -69,8 +73,8 @@ public final class Services {
     private Services() {
     }
 
-    static final Map<String, String> SAVED_PROPERTIES = VM.getSavedProperties();
-    static final boolean JVMCI_ENABLED = Boolean.parseBoolean(SAVED_PROPERTIES.get("jdk.internal.vm.ci.enabled"));
+    private static volatile Map<String, String> savedProperties = VM.getSavedProperties();
+    static final boolean JVMCI_ENABLED = Boolean.parseBoolean(savedProperties.get("jdk.internal.vm.ci.enabled"));
 
     /**
      * Checks that JVMCI is enabled in the VM and throws an error if it isn't.
@@ -90,7 +94,7 @@ public final class Services {
         if (sm != null) {
             sm.checkPermission(new JVMCIPermission());
         }
-        return SAVED_PROPERTIES;
+        return savedProperties;
     }
 
     /**
@@ -236,8 +240,9 @@ public final class Services {
             singleProvider = provider;
         }
         if (singleProvider == null && required) {
-            String javaHome = System.getProperty("java.home");
-            String vmName = System.getProperty("java.vm.name");
+            Map<String, String> savedProps = getSavedProperties();
+            String javaHome = savedProps.get("java.home");
+            String vmName = savedProps.get("java.vm.name");
             Formatter errorMessage = new Formatter();
             errorMessage.format("The VM does not expose required service %s.%n", service.getName());
             errorMessage.format("Currently used Java home directory is %s.%n", javaHome);
@@ -264,4 +269,56 @@ public final class Services {
         return ClassLoader.getSystemClassLoader();
     }
 
+    /**
+     * Serializes the {@linkplain #getSavedProperties() saved system properties} to a byte array for
+     * the purpose of {@linkplain #initializeSavedProperties(byte[]) initializing} the initial
+     * properties in the JVMCI shared library.
+     */
+    @VMEntryPoint
+    private static byte[] serializeSavedProperties() throws IOException {
+        if (IS_IN_NATIVE_IMAGE) {
+            throw new InternalError("Can only serialize saved properties in HotSpot runtime");
+        }
+        Map<String, String> props = Services.getSavedProperties();
+
+        // Compute size of output on the assumption that
+        // all system properties have ASCII names and values
+        int estimate = 4;
+        for (Map.Entry<String, String> e : props.entrySet()) {
+            String name = e.getKey();
+            String value = e.getValue();
+            estimate += (2 + (name.length())) + (2 + (value.length()));
+        }
+
+        ByteArrayOutputStream baos = new ByteArrayOutputStream(estimate);
+        DataOutputStream out = new DataOutputStream(baos);
+        out.writeInt(props.size());
+        for (Map.Entry<String, String> e : props.entrySet()) {
+            String name = e.getKey();
+            String value = e.getValue();
+            out.writeUTF(name);
+            out.writeUTF(value);
+        }
+        return baos.toByteArray();
+    }
+
+    /**
+     * Initialized the {@linkplain #getSavedProperties() saved system properties} in the JVMCI
+     * shared library from the {@linkplain #serializeSavedProperties() serialized saved properties}
+     * in the HotSpot runtime.
+     */
+    @VMEntryPoint
+    private static void initializeSavedProperties(byte[] serializedProperties) throws IOException {
+        if (!IS_IN_NATIVE_IMAGE) {
+            throw new InternalError("Can only initialize saved properties in JVMCI shared library runtime");
+        }
+        DataInputStream in = new DataInputStream(new ByteArrayInputStream(serializedProperties));
+        Map<String, String> props = new HashMap<>(in.readInt());
+        while (in.available() != 0) {
+            String name = in.readUTF();
+            String value = in.readUTF();
+            props.put(name, value);
+        }
+        savedProperties = Collections.unmodifiableMap(props);
+    }
 }

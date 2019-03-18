@@ -100,16 +100,6 @@
   experimental(intx, MethodProfileWidth, 0,                                 \
           "Number of methods to record in call profile")                    \
                                                                             \
-  develop(bool, TraceUncollectedSpeculations, false,                        \
-          "Print message when a failed speculation was not collected")      \
-                                                                            \
-  product(ccstr, JVMCILibArgs, NULL,                                        \
-          "Arguments for JVMCI shared library VM separated by a space (use "\
-          "JVMCILibArgsSep for an alternative separator)")                  \
-                                                                            \
-  experimental(ccstr, JVMCILibArgsSep, " ",                                 \
-          "Single character separator between JVMCILibArgs")                \
-                                                                            \
   experimental(ccstr, JVMCILibPath, NULL,                                   \
           "LD path for loading the JVMCI shared library")                   \
                                                                             \
@@ -121,6 +111,10 @@
           "Execute JVMCI Java code from a shared library "                  \
           "instead of loading it from class files and executing it "        \
           "on the HotSpot heap")                                            \
+                                                                            \
+  experimental(ccstr, TraceClassLoadingCause, NULL,                         \
+          "Print Java stack trace when loading a class whose fully"         \
+          "qualified name contains this string (\"*\" matches any class).") \
                                                                             \
   NOT_COMPILER2(diagnostic(bool, UseMultiplyToLenIntrinsic, false,          \
           "Enables intrinsification of BigInteger.multiplyToLen()"))        \
@@ -156,18 +150,9 @@ JVMCI_FLAGS(DECLARE_DEVELOPER_FLAG, \
 #define JVMCI_SHARED_LIBRARY_NAME "jvmcicompiler"
 
 class JVMCIGlobals {
- public:
-  // Specifies where the JVMCI Java code is (i.e., jars or shared library)
-  enum JavaMode {
-    HotSpot,      // HotSpot heap, raw VM internal access
-    SharedLibrary // Shared library, JNI access
-  };
  private:
-  static JavaMode _java_mode;
   static fileStream* _jni_config_file;
  public:
-  // Initializes the Java mode from the UseJVMCINativeLibrary flag.
-  static void init_java_mode_from_flags();
 
   // Returns true if jvmci flags are consistent. If not consistent,
   // an error message describing the inconsistency is printed before
@@ -177,7 +162,6 @@ class JVMCIGlobals {
   // Check and exit VM with error if selected GC is not supported by JVMCI.
   static void check_jvmci_supported_gc();
 
-  static JavaMode java_mode() { return _java_mode; }
   static fileStream* get_jni_config_file() { return _jni_config_file; }
 };
 #endif // SHARE_JVMCI_JVMCI_GLOBALS_HPP
