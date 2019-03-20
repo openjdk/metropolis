@@ -106,7 +106,7 @@ public final class GraalServices {
                     // JVMCI initialization opens all JVMCI packages
                     // to Graal which is a prerequisite for Graal to
                     // open JVMCI packages to other modules.
-                    JVMCI.initialize();
+                    JVMCI.getRuntime();
 
                     jvmciModule.addOpens(pkg, otherModule);
                 }
