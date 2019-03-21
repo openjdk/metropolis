@@ -507,7 +507,7 @@ nmethod* nmethod::new_nmethod(const methodHandle& method,
   nmethod* nm = NULL;
   { MutexLockerEx mu(CodeCache_lock, Mutex::_no_safepoint_check_flag);
 #if INCLUDE_JVMCI
-    int jvmci_data_size = JVMCINMethodData::compute_size(nmethod_mirror_name);
+    int jvmci_data_size = !compiler->is_jvmci() ? 0 : JVMCINMethodData::compute_size(nmethod_mirror_name);
 #endif
     int nmethod_size =
       CodeBlob::allocation_size(code_buffer, sizeof(nmethod))
@@ -538,8 +538,10 @@ nmethod* nmethod::new_nmethod(const methodHandle& method,
 
     if (nm != NULL) {
 #if INCLUDE_JVMCI
-      // Initialize the JVMCINMethodData object inlined into nm
-      nm->jvmci_nmethod_data()->initialize(nmethod_mirror_index, nmethod_mirror_name, failed_speculations);
+      if (compiler->is_jvmci()) {
+        // Initialize the JVMCINMethodData object inlined into nm
+        nm->jvmci_nmethod_data()->initialize(nmethod_mirror_index, nmethod_mirror_name, failed_speculations);
+      }
 #endif
       // To make dependency checking during class loading fast, record
       // the nmethod dependencies in the classes it is dependent on.

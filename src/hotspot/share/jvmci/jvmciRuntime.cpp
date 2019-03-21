@@ -1370,20 +1370,15 @@ CompLevel JVMCIRuntime::adjust_comp_level_inner(methodHandle method, bool is_osr
         thread->set_pending_async_exception(exception());               \
         return level;                                                   \
       }                                                                 \
-      tty->print("Uncaught exception while adjusting compilation level: "); \
-      java_lang_Throwable::print(exception(), tty);                     \
-      tty->cr();                                                        \
-      java_lang_Throwable::print_stack_trace(exception, tty);           \
-      if (HAS_PENDING_EXCEPTION) {                                      \
-        CLEAR_PENDING_EXCEPTION;                                        \
-      }                                                                 \
+      /* No need report errors while adjusting compilation level. */    \
+      /* The most likely error will be a StackOverflowError or */       \
+      /* an OutOfMemoryError. */                                        \
     } else {                                                            \
       JVMCIENV->clear_pending_exception();                              \
     }                                                                   \
     return level;                                                       \
   }                                                                     \
   (void)(0
-
 
   THREAD_JVMCIENV(thread);
   JVMCIObject receiver = _HotSpotJVMCIRuntime_instance;
@@ -1918,7 +1913,7 @@ JVMCI::CodeInstallResult JVMCIRuntime::register_method(JVMCIEnv* JVMCIENV,
     OopRecorder* oop_recorder = debug_info->oop_recorder();
     nmethod_mirror_index = oop_recorder->allocate_oop_index(nmethod_mirror.is_hotspot() ? nmethod_mirror.as_jobject() : NULL);
   } else {
-    // A HotSpotNmethod mirror whose compileIdSnapshot is non-zero is not tracked by the nmethod
+    // A default HotSpotNmethod mirror is never tracked by the nmethod
     nmethod_mirror_index = -1;
   }
 
@@ -1994,6 +1989,7 @@ JVMCI::CodeInstallResult JVMCIRuntime::register_method(JVMCIEnv* JVMCIENV,
         }
 
         JVMCINMethodData* data = nm->jvmci_nmethod_data();
+        assert(data != NULL, "must be");
         if (install_default) {
           assert(!nmethod_mirror.is_hotspot() || data->get_nmethod_mirror(nm) == NULL, "must be");
           if (entry_bci == InvocationEntryBci) {

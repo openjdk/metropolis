@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2014, 2019, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -23,6 +23,8 @@
 package jdk.vm.ci.common;
 
 import java.util.concurrent.atomic.AtomicInteger;
+
+import jdk.vm.ci.services.Services;
 
 /**
  * A facility for timing a step in the runtime initialization sequence. This is independent from all
@@ -71,7 +73,7 @@ public final class InitTimer implements AutoCloseable {
      */
     private static boolean isEnabled() {
         if (enabledPropertyValue == null) {
-            enabledPropertyValue = Boolean.getBoolean("jvmci.InitTimer");
+            enabledPropertyValue = Boolean.parseBoolean(Services.getSavedProperty("jvmci.InitTimer"));
             nesting = new AtomicInteger();
         }
         return enabledPropertyValue;

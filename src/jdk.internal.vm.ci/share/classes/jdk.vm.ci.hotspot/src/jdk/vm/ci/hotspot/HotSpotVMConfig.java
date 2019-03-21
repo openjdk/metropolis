@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2018, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2019, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -53,7 +53,7 @@ class HotSpotVMConfig extends HotSpotVMConfigAccess {
      * {@linkplain HotSpotJVMCIBackendFactory backend}.
      */
     String getHostArchitectureName() {
-        String arch = Services.getSavedProperties().get("os.arch");
+        String arch = Services.getSavedProperty("os.arch");
         switch (arch) {
             case "x86_64":
                 return "amd64";

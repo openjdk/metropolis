@@ -34,7 +34,7 @@ public class JvmciShutdownEventListener extends JVMCIServiceLocator implements H
     public static void main(String args[]) {
         try {
             HotSpotJVMCIRuntime.runtime(); // let's trigger that lazy jvmci init
-        } catch (InternalError e) {
+        } catch (Error e) {
             System.out.println(GOT_INTERNAL_ERROR);
         }
     }
