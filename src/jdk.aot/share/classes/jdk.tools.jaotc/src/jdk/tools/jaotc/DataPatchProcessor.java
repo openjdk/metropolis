@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2018, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2016, 2019, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -96,15 +96,6 @@ final class DataPatchProcessor {
                 gotName = "got." + targetSymbol;
                 binaryContainer.addCountersSymbol(targetSymbol);
             }
-        } else if (constant instanceof HotSpotObjectConstant) {
-            HotSpotObjectConstant oopConstant = (HotSpotObjectConstant) constant;
-            // String constant.
-            targetSymbol = "ldc." + oopConstant.toValueString();
-            Integer offset = binaryContainer.addOopSymbol(targetSymbol);
-            gotName = "got.ldc." + offset;
-        } else if (constant instanceof HotSpotSentinelConstant) {
-            targetSymbol = "state.M" + methodInfo.getCodeId();
-            gotName = "got." + targetSymbol;
         } else if (constant instanceof JavaConstant) {
             JavaConstant jConstant = (JavaConstant) constant;
             if (jConstant instanceof HotSpotConstantPoolObject) {
@@ -113,6 +104,15 @@ final class DataPatchProcessor {
                 targetSymbol = "ldc." + cpo.toValueString();
                 Integer offset = binaryContainer.addOopSymbol(targetSymbol);
                 gotName = "got.ldc." + offset;
+            } else if (jConstant instanceof HotSpotObjectConstant) {
+                HotSpotObjectConstant oopConstant = (HotSpotObjectConstant) jConstant;
+                // String constant.
+                targetSymbol = "ldc." + oopConstant.toValueString();
+                Integer offset = binaryContainer.addOopSymbol(targetSymbol);
+                gotName = "got.ldc." + offset;
+            } else if (jConstant instanceof HotSpotSentinelConstant) {
+                targetSymbol = "state.M" + methodInfo.getCodeId();
+                gotName = "got." + targetSymbol;
             }
         }
 

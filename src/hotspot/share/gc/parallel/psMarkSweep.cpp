@@ -563,12 +563,13 @@ void PSMarkSweep::mark_sweep_phase1(bool clear_all_softrefs) {
     // Unload nmethods.
     CodeCache::do_unloading(is_alive_closure(), purged_class);
 
-#if INCLUDE_JVMCI
-    JVMCI::do_unloading(is_alive_closure(), purged_class);
-#endif
-
     // Prune dead klasses from subklass/sibling/implementor lists.
     Klass::clean_weak_klass_links(purged_class);
+
+#if INCLUDE_JVMCI
+    // Clean JVMCI metadata handles.
+    JVMCI::do_unloading(is_alive_closure(), purged_class);
+#endif
   }
 
   _gc_tracer->report_object_count_after_gc(is_alive_closure());

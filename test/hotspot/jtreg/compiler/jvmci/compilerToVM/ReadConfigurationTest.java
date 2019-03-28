@@ -71,7 +71,6 @@ public class ReadConfigurationTest {
                 "declaringClass should be in class file format: " + m.declaringClass);
             Asserts.assertNotNull(m.name);
             Asserts.assertNotNull(m.descriptor);
-if (m.id <= 0) System.out.println(m);
             Asserts.assertTrue(m.id > 0);
         }
     }

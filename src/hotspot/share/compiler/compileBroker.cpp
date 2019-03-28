@@ -2094,7 +2094,6 @@ void CompileBroker::invoke_compiler_on_method(CompileTask* task) {
   } else
 #endif // INCLUDE_JVMCI
   {
-    HandleMark hm(thread);
     NoHandleMark  nhm;
     ThreadToNativeFromVM ttn(thread);
 

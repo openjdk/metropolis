@@ -276,7 +276,6 @@ UNSAFE_ENTRY(jobject, Unsafe_GetReferenceVolatile(JNIEnv *env, jobject unsafe, j
   oop p = JNIHandles::resolve(obj);
   assert_field_offset_sane(p, offset);
   oop v = HeapAccess<MO_SEQ_CST | ON_UNKNOWN_OOP_REF>::oop_load_at(p, offset);
-  assert(p != NULL, "must have oop");
   return JNIHandles::make_local(env, v);
 } UNSAFE_END
 

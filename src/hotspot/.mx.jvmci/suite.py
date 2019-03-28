@@ -261,9 +261,11 @@ suite = {
       "subDir" : "../../test/hotspot/jtreg/compiler/jvmci",
       "dependencies" : [
         "jdk.vm.ci.runtime.test",
+        "jdk.vm.ci.hotspot.test",
       ],
       "distDependencies" : [
         "JVMCI_API",
+        "JVMCI_HOTSPOT",
       ],
       "exclude" : ["mx:JUNIT"],
     },
