@@ -87,6 +87,21 @@ public:
   void work();
 };
 
+#if INCLUDE_JVMCI
+class JVMCICleaningTask : public StackObj {
+  BoolObjectClosure* _is_alive;
+  volatile int       _cleaning_claimed;
+
+public:
+  JVMCICleaningTask(BoolObjectClosure* is_alive);
+  // Clean JVMCI metadata handles.
+  void work(bool unloading_occurred);
+
+private:
+  bool claim_cleaning_task();
+};
+#endif
+
 // Do cleanup of some weakly held data in the same parallel task.
 // Assumes a non-moving context.
 class ParallelCleaningTask : public AbstractGangTask {
@@ -94,6 +109,9 @@ private:
   bool                    _unloading_occurred;
   StringDedupCleaningTask _string_dedup_task;
   CodeCacheUnloadingTask  _code_cache_task;
+#if INCLUDE_JVMCI
+  JVMCICleaningTask       _jvmci_cleaning_task;
+#endif
   KlassCleaningTask       _klass_cleaning_task;
 
 public:

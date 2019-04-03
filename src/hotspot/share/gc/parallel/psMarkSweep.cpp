@@ -50,9 +50,6 @@
 #include "gc/shared/referenceProcessorPhaseTimes.hpp"
 #include "gc/shared/spaceDecorator.hpp"
 #include "gc/shared/weakProcessor.hpp"
-#if INCLUDE_JVMCI
-#include "jvmci/jvmci.hpp"
-#endif
 #include "logging/log.hpp"
 #include "oops/oop.inline.hpp"
 #include "runtime/biasedLocking.hpp"
@@ -65,6 +62,9 @@
 #include "utilities/align.hpp"
 #include "utilities/events.hpp"
 #include "utilities/stack.inline.hpp"
+#if INCLUDE_JVMCI
+#include "jvmci/jvmci.hpp"
+#endif
 
 elapsedTimer        PSMarkSweep::_accumulated_time;
 jlong               PSMarkSweep::_time_of_last_gc   = 0;
@@ -566,10 +566,8 @@ void PSMarkSweep::mark_sweep_phase1(bool clear_all_softrefs) {
     // Prune dead klasses from subklass/sibling/implementor lists.
     Klass::clean_weak_klass_links(purged_class);
 
-#if INCLUDE_JVMCI
     // Clean JVMCI metadata handles.
-    JVMCI::do_unloading(is_alive_closure(), purged_class);
-#endif
+    JVMCI_ONLY(JVMCI::do_unloading(is_alive_closure(), purged_class));
   }
 
   _gc_tracer->report_object_count_after_gc(is_alive_closure());

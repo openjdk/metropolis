@@ -46,9 +46,6 @@
 #include "gc/shared/space.hpp"
 #include "gc/shared/strongRootsScope.hpp"
 #include "gc/shared/weakProcessor.hpp"
-#if INCLUDE_JVMCI
-#include "jvmci/jvmci.hpp"
-#endif
 #include "oops/instanceRefKlass.hpp"
 #include "oops/oop.inline.hpp"
 #include "prims/jvmtiExport.hpp"
@@ -59,6 +56,9 @@
 #include "utilities/copy.hpp"
 #include "utilities/events.hpp"
 #include "utilities/stack.inline.hpp"
+#if INCLUDE_JVMCI
+#include "jvmci/jvmci.hpp"
+#endif
 
 void GenMarkSweep::invoke_at_safepoint(ReferenceProcessor* rp, bool clear_all_softrefs) {
   assert(SafepointSynchronize::is_at_safepoint(), "must be at a safepoint");
@@ -237,10 +237,8 @@ void GenMarkSweep::mark_sweep_phase1(bool clear_all_softrefs) {
     // Prune dead klasses from subklass/sibling/implementor lists.
     Klass::clean_weak_klass_links(purged_class);
 
-#if INCLUDE_JVMCI
     // Clean JVMCI metadata handles.
-    JVMCI::do_unloading(&is_alive, purged_class);
-#endif
+    JVMCI_ONLY(JVMCI::do_unloading(&is_alive, purged_class));
   }
 
   gc_tracer()->report_object_count_after_gc(&is_alive);

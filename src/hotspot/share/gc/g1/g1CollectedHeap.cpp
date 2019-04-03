@@ -79,9 +79,6 @@
 #include "gc/shared/taskqueue.inline.hpp"
 #include "gc/shared/weakProcessor.inline.hpp"
 #include "gc/shared/workerPolicy.hpp"
-#if INCLUDE_JVMCI
-#include "jvmci/jvmci.hpp"
-#endif
 #include "logging/log.hpp"
 #include "memory/allocation.hpp"
 #include "memory/iterator.hpp"
@@ -3277,10 +3274,6 @@ void G1CollectedHeap::complete_cleaning(BoolObjectClosure* is_alive,
   uint num_workers = workers()->active_workers();
   ParallelCleaningTask unlink_task(is_alive, num_workers, class_unloading_occurred, false);
   workers()->run_task(&unlink_task);
-#if INCLUDE_JVMCI
-  // No parallel processing of JVMCI metadata handles for now.
-  JVMCI::do_unloading(is_alive, class_unloading_occurred);
-#endif
 }
 
 // Clean string dedup data structures.

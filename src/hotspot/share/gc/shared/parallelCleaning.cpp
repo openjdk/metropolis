@@ -30,6 +30,9 @@
 #include "logging/log.hpp"
 #include "memory/resourceArea.hpp"
 #include "logging/log.hpp"
+#if INCLUDE_JVMCI
+#include "jvmci/jvmci.hpp"
+#endif
 
 StringDedupCleaningTask::StringDedupCleaningTask(BoolObjectClosure* is_alive,
                                                  OopClosure* keep_alive,
@@ -158,6 +161,28 @@ void KlassCleaningTask::work() {
   }
 }
 
+#if INCLUDE_JVMCI
+JVMCICleaningTask::JVMCICleaningTask(BoolObjectClosure* is_alive) :
+  _is_alive(is_alive),
+  _cleaning_claimed(0) {
+}
+
+bool JVMCICleaningTask::claim_cleaning_task() {
+  if (_cleaning_claimed) {
+    return false;
+  }
+
+  return Atomic::cmpxchg(1, &_cleaning_claimed, 0) == 0;
+}
+
+void JVMCICleaningTask::work(bool unloading_occurred) {
+  // One worker will clean JVMCI metadata handles.
+  if (EnableJVMCI && claim_cleaning_task()) {
+    JVMCI::do_unloading(_is_alive, unloading_occurred);
+  }
+}
+#endif // INCLUDE_JVMCI
+
 ParallelCleaningTask::ParallelCleaningTask(BoolObjectClosure* is_alive,
                                            uint num_workers,
                                            bool unloading_occurred,
@@ -166,6 +191,9 @@ ParallelCleaningTask::ParallelCleaningTask(BoolObjectClosure* is_alive,
   _unloading_occurred(unloading_occurred),
   _string_dedup_task(is_alive, NULL, resize_dedup_table),
   _code_cache_task(num_workers, is_alive, unloading_occurred),
+#if INCLUDE_JVMCI
+  _jvmci_cleaning_task(is_alive),
+#endif
   _klass_cleaning_task() {
 }
 
@@ -182,5 +210,6 @@ void ParallelCleaningTask::work(uint worker_id) {
   // processed if there was no unloading.
   if (_unloading_occurred) {
     _klass_cleaning_task.work();
+    JVMCI_ONLY(_jvmci_cleaning_task.work(_unloading_occurred);)
   }
 }

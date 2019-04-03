@@ -309,7 +309,7 @@ void MetadataHandleBlock::do_unloading(BoolObjectClosure* is_alive) {
         if (klass->class_loader_data()->is_unloading()) {
           // This needs to be marked so that it's no longer scanned
           // but can't be put on the free list yet. The
-          // ReferenceCleaner will set this to NULL and
+          // HandleCleaner will set this to NULL and
           // put it on the free list.
           jlong old_value = Atomic::cmpxchg((jlong) (ptr_tag), (jlong*)handle, (jlong) value);
           if (old_value == (jlong) value) {

@@ -1611,7 +1611,6 @@ bool CompileBroker::init_compiler_runtime() {
 
   {
     // Must switch to native to allocate ci_env
-    HandleMark hm(thread);
     ThreadToNativeFromVM ttn(thread);
     ciEnv ci_env(NULL, system_dictionary_modification_counter);
     // Cache Jvmti state

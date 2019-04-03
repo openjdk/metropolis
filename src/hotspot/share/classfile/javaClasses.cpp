@@ -2633,6 +2633,7 @@ void java_lang_StackTraceElement::fill_in(Handle element,
   }
 }
 
+#if INCLUDE_JVMCI
 void java_lang_StackTraceElement::decode(Handle mirror, methodHandle method, int bci, Symbol*& methodname, Symbol*& filename, int& line_number) {
   int method_id = method->orig_method_idnum();
   int cpref = method->name_index();
@@ -2669,6 +2670,7 @@ void java_lang_StackTraceElement::decode(Handle mirror, int method_id, int versi
     line_number = Backtrace::get_line_number(method, bci);
   }
 }
+#endif // INCLUDE_JVMCI
 
 Method* java_lang_StackFrameInfo::get_method(Handle stackFrame, InstanceKlass* holder, TRAPS) {
   HandleMark hm(THREAD);
