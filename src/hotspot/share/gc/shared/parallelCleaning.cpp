@@ -177,7 +177,7 @@ bool JVMCICleaningTask::claim_cleaning_task() {
 
 void JVMCICleaningTask::work(bool unloading_occurred) {
   // One worker will clean JVMCI metadata handles.
-  if (EnableJVMCI && claim_cleaning_task()) {
+  if (unloading_occurred && EnableJVMCI && claim_cleaning_task()) {
     JVMCI::do_unloading(_is_alive, unloading_occurred);
   }
 }
@@ -191,14 +191,16 @@ ParallelCleaningTask::ParallelCleaningTask(BoolObjectClosure* is_alive,
   _unloading_occurred(unloading_occurred),
   _string_dedup_task(is_alive, NULL, resize_dedup_table),
   _code_cache_task(num_workers, is_alive, unloading_occurred),
-#if INCLUDE_JVMCI
-  _jvmci_cleaning_task(is_alive),
-#endif
+  JVMCI_ONLY(_jvmci_cleaning_task(is_alive) COMMA)
   _klass_cleaning_task() {
 }
 
 // The parallel work done by all worker threads.
 void ParallelCleaningTask::work(uint worker_id) {
+  // Clean JVMCI metadata handles.
+  // Execute this task first because it is serial task.
+  JVMCI_ONLY(_jvmci_cleaning_task.work(_unloading_occurred);)
+
   // Do first pass of code cache cleaning.
   _code_cache_task.work(worker_id);
 
@@ -210,6 +212,5 @@ void ParallelCleaningTask::work(uint worker_id) {
   // processed if there was no unloading.
   if (_unloading_occurred) {
     _klass_cleaning_task.work();
-    JVMCI_ONLY(_jvmci_cleaning_task.work(_unloading_occurred);)
   }
 }

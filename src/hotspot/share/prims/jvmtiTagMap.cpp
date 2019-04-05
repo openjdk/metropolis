@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003, 2018, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2003, 2019, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -61,6 +61,9 @@
 #include "utilities/macros.hpp"
 #if INCLUDE_ZGC
 #include "gc/z/zGlobals.hpp"
+#endif
+#if INCLUDE_JVMCI
+#include "jvmci/jvmci.hpp"
 #endif
 
 // JvmtiTagHashmapEntry
@@ -3042,6 +3045,14 @@ inline bool VM_HeapWalkOperation::collect_simple_roots() {
   // exceptions) will be visible.
   blk.set_kind(JVMTI_HEAP_REFERENCE_OTHER);
   Universe::oops_do(&blk);
+
+#if INCLUDE_JVMCI
+  blk.set_kind(JVMTI_HEAP_REFERENCE_OTHER);
+  JVMCI::oops_do(&blk);
+  if (blk.stopped()) {
+    return false;
+  }
+#endif
 
   return true;
 }
