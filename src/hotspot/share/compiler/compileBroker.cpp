@@ -68,10 +68,8 @@
 #include "c1/c1_Compiler.hpp"
 #endif
 #if INCLUDE_JVMCI
-#include "jvmci/jvmciCompiler.hpp"
-#include "jvmci/jvmciRuntime.hpp"
 #include "jvmci/jvmciEnv.hpp"
-#include "runtime/vframe.hpp"
+#include "jvmci/jvmciRuntime.hpp"
 #endif
 #ifdef COMPILER2
 #include "opto/c2compiler.hpp"

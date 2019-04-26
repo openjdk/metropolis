@@ -24,14 +24,13 @@
 #ifndef SHARE_JVMCI_JVMCIRUNTIME_HPP
 #define SHARE_JVMCI_JVMCIRUNTIME_HPP
 
-#include "interpreter/interpreter.hpp"
+#include "code/nmethod.hpp"
 #include "jvmci/jvmci.hpp"
-#include "memory/allocation.hpp"
-#include "runtime/arguments.hpp"
-#include "runtime/deoptimization.hpp"
+#include "jvmci/jvmciExceptions.hpp"
+#include "jvmci/jvmciObject.hpp"
 
-class JVMCIObject;
 class JVMCIEnv;
+class JVMCICompiler;
 class JVMCICompileState;
 
 // Encapsulates the JVMCI metadata for an nmethod.
@@ -86,7 +85,7 @@ public:
 
 // A top level class that represents an initialized JVMCI runtime.
 // There is one instance of this class per HotSpotJVMCIRuntime object.
-class JVMCIRuntime: public CHeapObj<mtCompiler> {
+class JVMCIRuntime: public CHeapObj<mtJVMCI> {
  public:
   // Constants describing whether JVMCI wants to be able to adjust the compilation
   // level selected for a method by the VM compilation policy and if so, based on
@@ -107,7 +106,7 @@ class JVMCIRuntime: public CHeapObj<mtCompiler> {
 
   bool _shutdown_called;
 
-  CompLevel adjust_comp_level_inner(methodHandle method, bool is_osr, CompLevel level, JavaThread* thread);
+  CompLevel adjust_comp_level_inner(const methodHandle& method, bool is_osr, CompLevel level, JavaThread* thread);
 
   JVMCIObject create_jvmci_primitive_type(BasicType type, JVMCI_TRAPS);
 
@@ -179,7 +178,7 @@ class JVMCIRuntime: public CHeapObj<mtCompiler> {
    * @param thread the current thread
    * @return the compilation level to use for the compilation
    */
-  CompLevel adjust_comp_level(methodHandle method, bool is_osr, CompLevel level, JavaThread* thread);
+  CompLevel adjust_comp_level(const methodHandle& method, bool is_osr, CompLevel level, JavaThread* thread);
 
   void shutdown();
 
@@ -295,7 +294,7 @@ class JVMCIRuntime: public CHeapObj<mtCompiler> {
   } \
   (void)(0
 
-  static BasicType kindToBasicType(Handle kind, TRAPS);
+  static BasicType kindToBasicType(const Handle& kind, TRAPS);
 
   static void new_instance_common(JavaThread* thread, Klass* klass, bool null_on_fail);
   static void new_array_common(JavaThread* thread, Klass* klass, jint length, bool null_on_fail);

@@ -63,11 +63,6 @@
 #include "utilities/preserveException.hpp"
 #include "utilities/xmlstream.hpp"
 
-#if INCLUDE_JVMCI
-#include "jvmci/jvmciRuntime.hpp"
-#include "jvmci/jvmciJavaClasses.hpp"
-#endif
-
 
 bool DeoptimizationMarker::_is_active = false;
 

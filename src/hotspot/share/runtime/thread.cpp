@@ -117,9 +117,8 @@
 #include "utilities/singleWriterSynchronizer.hpp"
 #include "utilities/vmError.hpp"
 #if INCLUDE_JVMCI
+#include "jvmci/jvmci.hpp"
 #include "jvmci/jvmciEnv.hpp"
-#include "jvmci/jvmciRuntime.hpp"
-#include "logging/logHandle.hpp"
 #endif
 #ifdef COMPILER1
 #include "c1/c1_Compiler.hpp"

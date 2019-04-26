@@ -24,15 +24,35 @@
 #include "precompiled.hpp"
 #include "classfile/symbolTable.hpp"
 #include "interpreter/linkResolver.hpp"
-#include "jvmci/jvmciEnv.hpp"
+#include "jvmci/jniAccessMark.inline.hpp"
 #include "jvmci/jvmciJavaClasses.hpp"
 #include "jvmci/jvmciRuntime.hpp"
 #include "memory/resourceArea.hpp"
-#include "oops/oop.inline.hpp"
 #include "runtime/jniHandles.inline.hpp"
 #include "runtime/fieldDescriptor.inline.hpp"
 
 // ------------------------------------------------------------------
+
+oop HotSpotJVMCI::resolve(JVMCIObject obj) {
+  return JNIHandles::resolve(obj.as_jobject());
+}
+
+arrayOop HotSpotJVMCI::resolve(JVMCIArray obj) {
+  return (arrayOop) JNIHandles::resolve(obj.as_jobject());
+}
+
+objArrayOop HotSpotJVMCI::resolve(JVMCIObjectArray obj) {
+  return (objArrayOop) JNIHandles::resolve(obj.as_jobject());
+}
+
+typeArrayOop HotSpotJVMCI::resolve(JVMCIPrimitiveArray obj) {
+  return (typeArrayOop) JNIHandles::resolve(obj.as_jobject());
+}
+
+JVMCIObject HotSpotJVMCI::wrap(oop obj) {
+  assert(Thread::current()->is_Java_thread(), "must be");
+  return JVMCIObject(JNIHandles::make_local(obj), true);
+}
 
 /**
  * Computes the field offset of a static or instance field.
@@ -544,36 +564,36 @@ JVMCI_CLASSES_DO(EMPTY2, EMPTY0, FIELD2, FIELD2, FIELD2, FIELD2, FIELD2, FIELD3,
 #define STATIC_OBJECT_FIELD(className, name, signature)       STATIC_OOPISH_FIELD(className, name, JVMCIObject, Object, (JVMCIObject))
 #define STATIC_OBJECTARRAY_FIELD(className, name, signature)  STATIC_OOPISH_FIELD(className, name, JVMCIObjectArray, Object, (JVMCIObjectArray))
 
-#define OOPISH_FIELD(className, name, type, accessor, cast)                                                                           \
-  type JNIJVMCI::className::get_##name(JVMCIEnv* jvmciEnv, JVMCIObject obj) {                                                         \
-   className::check(jvmciEnv, obj, #name, className::_##name##_field_id);                                                             \
-   JNIAccessMark jni(jvmciEnv);                                         \
-   return cast wrap(jni()->Get##accessor##Field(resolve_handle(obj), className::_##name##_field_id));   \
-  }                                                                                                                                   \
-  void JNIJVMCI::className::set_##name(JVMCIEnv* jvmciEnv, JVMCIObject obj, type x) {                                                 \
-    className::check(jvmciEnv, obj, #name, className::_##name##_field_id);                                                            \
-    JNIAccessMark jni(jvmciEnv); \
+#define OOPISH_FIELD(className, name, type, accessor, cast)                                             \
+  type JNIJVMCI::className::get_##name(JVMCIEnv* jvmciEnv, JVMCIObject obj) {                           \
+    className::check(jvmciEnv, obj, #name, className::_##name##_field_id);                              \
+    JNIAccessMark jni(jvmciEnv);                                                                        \
+    return cast wrap(jni()->Get##accessor##Field(resolve_handle(obj), className::_##name##_field_id));  \
+  }                                                                                                     \
+  void JNIJVMCI::className::set_##name(JVMCIEnv* jvmciEnv, JVMCIObject obj, type x) {                   \
+    className::check(jvmciEnv, obj, #name, className::_##name##_field_id);                              \
+    JNIAccessMark jni(jvmciEnv);                                                                        \
     jni()->Set##accessor##Field(resolve_handle(obj), className::_##name##_field_id, resolve_handle(x)); \
   }
 
-#define STATIC_OOPISH_FIELD(className, name, type, accessor, cast)                                                               \
-  type JNIJVMCI::className::get_##name(JVMCIEnv* jvmciEnv) {                                                                     \
-    JNIAccessMark jni(jvmciEnv); \
+#define STATIC_OOPISH_FIELD(className, name, type, accessor, cast)                                      \
+  type JNIJVMCI::className::get_##name(JVMCIEnv* jvmciEnv) {                                            \
+    JNIAccessMark jni(jvmciEnv);                                                                        \
     return cast wrap(jni()->GetStatic##accessor##Field(className::clazz(), className::_##name##_field_id));  \
-  }                                                                                                                              \
-  void JNIJVMCI::className::set_##name(JVMCIEnv* jvmciEnv, type x) {                                                             \
-    JNIAccessMark jni(jvmciEnv); \
+  }                                                                                                     \
+  void JNIJVMCI::className::set_##name(JVMCIEnv* jvmciEnv, type x) {                                    \
+    JNIAccessMark jni(jvmciEnv);                                                                        \
     jni()->SetStatic##accessor##Field(className::clazz(), className::_##name##_field_id, resolve_handle(x)); \
   }
 
-#define STATIC_PRIMITIVE_FIELD(className, name, type, accessor, cast)                                           \
-  type JNIJVMCI::className::get_##name(JVMCIEnv* jvmciEnv) {                                                    \
-    JNIAccessMark jni(jvmciEnv); \
-    return cast jni()->GetStatic##accessor##Field(className::clazz(), className::_##name##_field_id); \
-  }                                                                                                             \
-  void JNIJVMCI::className::set_##name(JVMCIEnv* jvmciEnv, type x) {                                            \
-    JNIAccessMark jni(jvmciEnv); \
-    jni()->SetStatic##accessor##Field(className::clazz(), className::_##name##_field_id, x);          \
+#define STATIC_PRIMITIVE_FIELD(className, name, type, accessor, cast)                                   \
+  type JNIJVMCI::className::get_##name(JVMCIEnv* jvmciEnv) {                                            \
+    JNIAccessMark jni(jvmciEnv);                                                                        \
+    return cast jni()->GetStatic##accessor##Field(className::clazz(), className::_##name##_field_id);   \
+  }                                                                                                     \
+  void JNIJVMCI::className::set_##name(JVMCIEnv* jvmciEnv, type x) {                                    \
+    JNIAccessMark jni(jvmciEnv);                                                                        \
+    jni()->SetStatic##accessor##Field(className::clazz(), className::_##name##_field_id, x);            \
   }
 
 #define STATIC_INT_FIELD(className, name) STATIC_PRIMITIVE_FIELD(className, name, jint, Int, EMPTY_CAST)

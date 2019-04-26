@@ -89,11 +89,10 @@ public:
 
 #if INCLUDE_JVMCI
 class JVMCICleaningTask : public StackObj {
-  BoolObjectClosure* _is_alive;
   volatile int       _cleaning_claimed;
 
 public:
-  JVMCICleaningTask(BoolObjectClosure* is_alive);
+  JVMCICleaningTask();
   // Clean JVMCI metadata handles.
   void work(bool unloading_occurred);
 

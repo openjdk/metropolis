@@ -24,15 +24,18 @@
 #ifndef SHARE_JVMCI_JVMCI_HPP
 #define SHARE_JVMCI_JVMCI_HPP
 
-#include "interpreter/interpreter.hpp"
-#include "jvmci/jvmciExceptions.hpp"
-#include "jvmci/jvmciJavaClasses.hpp"
-#include "memory/allocation.hpp"
-#include "runtime/arguments.hpp"
-#include "runtime/deoptimization.hpp"
+#include "compiler/compilerDefinitions.hpp"
+#include "utilities/exceptions.hpp"
 
-class MetadataHandleBlock;
+class BoolObjectClosure;
+class constantPoolHandle;
+class JavaThread;
+class JNIHandleBlock;
+class JVMCIEnv;
 class JVMCIRuntime;
+class Metadata;
+class MetadataHandleBlock;
+class OopClosure;
 
 struct _jmetadata;
 typedef struct _jmetadata *jmetadata;
@@ -65,7 +68,7 @@ class JVMCI : public AllStatic {
      code_too_large
   };
 
-  static void do_unloading(BoolObjectClosure* is_alive, bool unloading_occurred);
+  static void do_unloading(bool unloading_occurred);
 
   static void metadata_do(void f(Metadata*));
 
@@ -85,7 +88,7 @@ class JVMCI : public AllStatic {
    * @param thread the current thread
    * @return the compilation level to use for the compilation
    */
-  static CompLevel adjust_comp_level(methodHandle method, bool is_osr, CompLevel level, JavaThread* thread);
+  static CompLevel adjust_comp_level(const methodHandle& method, bool is_osr, CompLevel level, JavaThread* thread);
 
   static bool is_compiler_initialized();
 
@@ -97,9 +100,8 @@ class JVMCI : public AllStatic {
   static void initialize_globals();
 
   static void initialize_compiler(TRAPS);
-  // JVMCIRuntime::call_getCompiler(CHECK);
 
-  static jobject make_global(Handle obj);
+  static jobject make_global(const Handle& obj);
   static bool is_global_handle(jobject handle);
 
   static jmetadata allocate_handle(const methodHandle& handle);

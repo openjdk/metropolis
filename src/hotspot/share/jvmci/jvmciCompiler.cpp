@@ -22,17 +22,8 @@
  */
 
 #include "precompiled.hpp"
-#include "jvm.h"
-#include "memory/oopFactory.hpp"
-#include "memory/resourceArea.hpp"
-#include "oops/oop.inline.hpp"
-#include "runtime/javaCalls.hpp"
-#include "runtime/handles.hpp"
-#include "jvmci/jvmciCompiler.hpp"
-#include "jvmci/jvmciEnv.hpp"
+#include "compiler/compileBroker.hpp"
 #include "jvmci/jvmciRuntime.hpp"
-#include "runtime/compilationPolicy.hpp"
-#include "runtime/globals_extension.hpp"
 #include "runtime/handles.inline.hpp"
 
 JVMCICompiler* JVMCICompiler::_instance = NULL;

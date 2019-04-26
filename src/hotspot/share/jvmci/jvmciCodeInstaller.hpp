@@ -24,11 +24,11 @@
 #ifndef SHARE_JVMCI_JVMCICODEINSTALLER_HPP
 #define SHARE_JVMCI_JVMCICODEINSTALLER_HPP
 
-#include "jvmci/jvmci.hpp"
-#include "jvmci/jvmciCompiler.hpp"
-#include "jvmci/jvmciEnv.hpp"
-#include "jvmci/jvmciJavaClasses.hpp"
+#include "code/debugInfoRec.hpp"
+#include "code/exceptionHandlerTable.hpp"
 #include "code/nativeInst.hpp"
+#include "jvmci/jvmci.hpp"
+#include "jvmci/jvmciEnv.hpp"
 
 #if INCLUDE_AOT
 class RelocBuffer : public StackObj {
@@ -214,7 +214,7 @@ private:
 
 public:
 
-  CodeInstaller(JVMCIEnv* jvmci_env, bool immutable_pic_compilation) : _arena(mtCompiler), _jvmci_env(jvmci_env), _immutable_pic_compilation(immutable_pic_compilation) {}
+  CodeInstaller(JVMCIEnv* jvmci_env, bool immutable_pic_compilation) : _arena(mtJVMCI), _jvmci_env(jvmci_env), _immutable_pic_compilation(immutable_pic_compilation) {}
 
 #if INCLUDE_AOT
   JVMCI::CodeInstallResult gather_metadata(JVMCIObject target, JVMCIObject compiled_code, CodeMetadata& metadata, JVMCI_TRAPS);

@@ -568,7 +568,7 @@ void PSMarkSweep::mark_sweep_phase1(bool clear_all_softrefs) {
     Klass::clean_weak_klass_links(purged_class);
 
     // Clean JVMCI metadata handles.
-    JVMCI_ONLY(JVMCI::do_unloading(is_alive_closure(), purged_class));
+    JVMCI_ONLY(JVMCI::do_unloading(purged_class));
   }
 
   _gc_tracer->report_object_count_after_gc(is_alive_closure());

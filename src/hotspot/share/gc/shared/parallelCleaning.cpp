@@ -162,8 +162,7 @@ void KlassCleaningTask::work() {
 }
 
 #if INCLUDE_JVMCI
-JVMCICleaningTask::JVMCICleaningTask(BoolObjectClosure* is_alive) :
-  _is_alive(is_alive),
+JVMCICleaningTask::JVMCICleaningTask() :
   _cleaning_claimed(0) {
 }
 
@@ -178,7 +177,7 @@ bool JVMCICleaningTask::claim_cleaning_task() {
 void JVMCICleaningTask::work(bool unloading_occurred) {
   // One worker will clean JVMCI metadata handles.
   if (unloading_occurred && EnableJVMCI && claim_cleaning_task()) {
-    JVMCI::do_unloading(_is_alive, unloading_occurred);
+    JVMCI::do_unloading(unloading_occurred);
   }
 }
 #endif // INCLUDE_JVMCI
@@ -191,7 +190,7 @@ ParallelCleaningTask::ParallelCleaningTask(BoolObjectClosure* is_alive,
   _unloading_occurred(unloading_occurred),
   _string_dedup_task(is_alive, NULL, resize_dedup_table),
   _code_cache_task(num_workers, is_alive, unloading_occurred),
-  JVMCI_ONLY(_jvmci_cleaning_task(is_alive) COMMA)
+  JVMCI_ONLY(_jvmci_cleaning_task() COMMA)
   _klass_cleaning_task() {
 }
 

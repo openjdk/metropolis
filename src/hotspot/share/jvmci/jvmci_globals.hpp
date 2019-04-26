@@ -25,7 +25,6 @@
 #ifndef SHARE_JVMCI_JVMCI_GLOBALS_HPP
 #define SHARE_JVMCI_JVMCI_GLOBALS_HPP
 
-#include "runtime/globals.hpp"
 #include "utilities/ostream.hpp"
 
 //
@@ -111,10 +110,6 @@
           "Execute JVMCI Java code from a shared library "                  \
           "instead of loading it from class files and executing it "        \
           "on the HotSpot heap")                                            \
-                                                                            \
-  experimental(ccstr, TraceClassLoadingCause, NULL,                         \
-          "Print Java stack trace when loading a class whose fully"         \
-          "qualified name contains this string (\"*\" matches any class).") \
                                                                             \
   NOT_COMPILER2(diagnostic(bool, UseMultiplyToLenIntrinsic, false,          \
           "Enables intrinsification of BigInteger.multiplyToLen()"))        \

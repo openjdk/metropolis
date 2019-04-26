@@ -3045,6 +3045,9 @@ inline bool VM_HeapWalkOperation::collect_simple_roots() {
   // exceptions) will be visible.
   blk.set_kind(JVMTI_HEAP_REFERENCE_OTHER);
   Universe::oops_do(&blk);
+  if (blk.stopped()) {
+    return false;
+  }
 
 #if INCLUDE_JVMCI
   blk.set_kind(JVMTI_HEAP_REFERENCE_OTHER);

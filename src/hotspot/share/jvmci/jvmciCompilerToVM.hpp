@@ -24,10 +24,11 @@
 #ifndef SHARE_JVMCI_JVMCICOMPILERTOVM_HPP
 #define SHARE_JVMCI_JVMCICOMPILERTOVM_HPP
 
-#include "jni.h"
+#include "gc/shared/cardTable.hpp"
 #include "jvmci/jvmciExceptions.hpp"
-#include "jvmci/jvmciJavaClasses.hpp"
 #include "runtime/javaCalls.hpp"
+
+class JVMCIObjectArray;
 
 class CompilerToVM {
  public:

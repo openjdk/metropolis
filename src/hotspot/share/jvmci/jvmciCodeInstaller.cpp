@@ -22,27 +22,13 @@
  */
 
 #include "precompiled.hpp"
-#include "asm/register.hpp"
 #include "code/compiledIC.hpp"
-#include "code/vmreg.inline.hpp"
 #include "compiler/compileBroker.hpp"
-#include "compiler/disassembler.hpp"
-#include "jvmci/jvmciEnv.hpp"
-#include "jvmci/jvmciCompiler.hpp"
 #include "jvmci/jvmciCodeInstaller.hpp"
-#include "jvmci/jvmciJavaClasses.hpp"
 #include "jvmci/jvmciCompilerToVM.hpp"
 #include "jvmci/jvmciRuntime.hpp"
-#include "memory/allocation.inline.hpp"
-#include "oops/arrayOop.inline.hpp"
-#include "oops/oop.inline.hpp"
-#include "oops/objArrayOop.inline.hpp"
-#include "oops/typeArrayOop.inline.hpp"
-#include "runtime/handles.inline.hpp"
 #include "runtime/interfaceSupport.inline.hpp"
-#include "runtime/javaCalls.hpp"
 #include "runtime/jniHandles.inline.hpp"
-#include "runtime/safepointMechanism.inline.hpp"
 #include "runtime/sharedRuntime.hpp"
 #include "utilities/align.hpp"
 
@@ -50,12 +36,12 @@
 // Allocate them with new so they are never destroyed (otherwise, a
 // forced exit could destroy these objects while they are still in
 // use).
-ConstantOopWriteValue* CodeInstaller::_oop_null_scope_value = new (ResourceObj::C_HEAP, mtCompiler) ConstantOopWriteValue(NULL);
-ConstantIntValue*      CodeInstaller::_int_m1_scope_value = new (ResourceObj::C_HEAP, mtCompiler) ConstantIntValue(-1);
-ConstantIntValue*      CodeInstaller::_int_0_scope_value =  new (ResourceObj::C_HEAP, mtCompiler) ConstantIntValue((jint)0);
-ConstantIntValue*      CodeInstaller::_int_1_scope_value =  new (ResourceObj::C_HEAP, mtCompiler) ConstantIntValue(1);
-ConstantIntValue*      CodeInstaller::_int_2_scope_value =  new (ResourceObj::C_HEAP, mtCompiler) ConstantIntValue(2);
-LocationValue*         CodeInstaller::_illegal_value = new (ResourceObj::C_HEAP, mtCompiler) LocationValue(Location());
+ConstantOopWriteValue* CodeInstaller::_oop_null_scope_value = new (ResourceObj::C_HEAP, mtJVMCI) ConstantOopWriteValue(NULL);
+ConstantIntValue*      CodeInstaller::_int_m1_scope_value = new (ResourceObj::C_HEAP, mtJVMCI) ConstantIntValue(-1);
+ConstantIntValue*      CodeInstaller::_int_0_scope_value =  new (ResourceObj::C_HEAP, mtJVMCI) ConstantIntValue((jint)0);
+ConstantIntValue*      CodeInstaller::_int_1_scope_value =  new (ResourceObj::C_HEAP, mtJVMCI) ConstantIntValue(1);
+ConstantIntValue*      CodeInstaller::_int_2_scope_value =  new (ResourceObj::C_HEAP, mtJVMCI) ConstantIntValue(2);
+LocationValue*         CodeInstaller::_illegal_value = new (ResourceObj::C_HEAP, mtJVMCI) LocationValue(Location());
 
 VMReg CodeInstaller::getVMRegFromLocation(JVMCIObject location, int total_frame_size, JVMCI_TRAPS) {
   if (location.is_null()) {
@@ -543,7 +529,7 @@ void RelocBuffer::ensure_size(size_t bytes) {
   assert(_buffer == NULL, "can only be used once");
   assert(_size == 0, "can only be used once");
   if (bytes >= RelocBuffer::stack_size) {
-    _buffer = NEW_C_HEAP_ARRAY(char, bytes, mtInternal);
+    _buffer = NEW_C_HEAP_ARRAY(char, bytes, mtJVMCI);
   }
   _size = bytes;
 }
