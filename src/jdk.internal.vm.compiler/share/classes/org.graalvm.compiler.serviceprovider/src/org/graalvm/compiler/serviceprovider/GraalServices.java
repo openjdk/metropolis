@@ -29,8 +29,11 @@ import static java.lang.Thread.currentThread;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Arrays;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.ServiceConfigurationError;
 import java.util.ServiceLoader;
 import java.util.concurrent.atomic.AtomicLong;
@@ -48,10 +51,15 @@ import jdk.vm.ci.runtime.JVMCI;
 import jdk.vm.ci.services.JVMCIPermission;
 import jdk.vm.ci.services.Services;
 
+import static jdk.vm.ci.services.Services.IS_IN_NATIVE_IMAGE;
+import static jdk.vm.ci.services.Services.IS_BUILDING_NATIVE_IMAGE;
+
 /**
- * Interface to functionality that abstracts over which JDK version Graal is running on.
+ * JDK 13+ version of {@link GraalServices}.
  */
 public final class GraalServices {
+
+    private static final Map<Class<?>, List<?>> servicesCache = IS_BUILDING_NATIVE_IMAGE ? new HashMap<>() : null;
 
     private GraalServices() {
     }
@@ -62,8 +70,37 @@ public final class GraalServices {
      * @throws SecurityException if on JDK8 and a security manager is present and it denies
      *             {@link JVMCIPermission}
      */
+    @SuppressWarnings("unchecked")
     public static <S> Iterable<S> load(Class<S> service) {
-        Iterable<S> iterable = ServiceLoader.load(service);
+        if (IS_IN_NATIVE_IMAGE || IS_BUILDING_NATIVE_IMAGE) {
+            List<?> list = servicesCache.get(service);
+            if (list != null) {
+                return (Iterable<S>) list;
+            }
+            if (IS_IN_NATIVE_IMAGE) {
+                throw new InternalError(String.format("No %s providers found when building native image", service.getName()));
+            }
+        }
+
+        Iterable<S> providers = load0(service);
+
+        if (IS_BUILDING_NATIVE_IMAGE) {
+            synchronized (servicesCache) {
+                ArrayList<S> providersList = new ArrayList<>();
+                for (S provider : providers) {
+                    providersList.add(provider);
+                }
+                providers = providersList;
+                servicesCache.put(service, providersList);
+                return providers;
+            }
+        }
+
+        return providers;
+    }
+
+    protected static <S> Iterable<S> load0(Class<S> service) {
+        Iterable<S> iterable = ServiceLoader.load(service, GraalServices.class.getClassLoader());
         return new Iterable<>() {
             @Override
             public Iterator<S> iterator() {
@@ -98,6 +135,8 @@ public final class GraalServices {
      * @param other all JVMCI packages will be opened to the module defining this class
      */
     static void openJVMCITo(Class<?> other) {
+        if (IS_IN_NATIVE_IMAGE) return;
+
         Module jvmciModule = JVMCI_MODULE;
         Module otherModule = other.getModule();
         if (jvmciModule != otherModule) {

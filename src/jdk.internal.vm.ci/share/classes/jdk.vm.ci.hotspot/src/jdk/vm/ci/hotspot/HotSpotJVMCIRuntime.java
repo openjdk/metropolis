@@ -351,7 +351,7 @@ assert factories != null : "sanity";
         if (IS_IN_NATIVE_IMAGE || cachedHotSpotJVMCIBackendFactories != null) {
             return cachedHotSpotJVMCIBackendFactories;
         }
-        Iterable<HotSpotJVMCIBackendFactory> result = Services.load(HotSpotJVMCIBackendFactory.class);
+        Iterable<HotSpotJVMCIBackendFactory> result = ServiceLoader.load(HotSpotJVMCIBackendFactory.class, ClassLoader.getSystemClassLoader());
         if (IS_BUILDING_NATIVE_IMAGE) {
             cachedHotSpotJVMCIBackendFactories = new ArrayList<>();
             for (HotSpotJVMCIBackendFactory factory : result) {

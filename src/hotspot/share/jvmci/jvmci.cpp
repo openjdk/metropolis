@@ -23,13 +23,15 @@
 
 #include "precompiled.hpp"
 #include "classfile/systemDictionary.hpp"
+#include "gc/shared/collectedHeap.hpp"
+#include "gc/shared/oopStorage.inline.hpp"
 #include "jvmci/jvmci.hpp"
 #include "jvmci/jvmci_globals.hpp"
 #include "jvmci/jvmciJavaClasses.hpp"
 #include "jvmci/jvmciRuntime.hpp"
 #include "jvmci/metadataHandleBlock.hpp"
 
-JNIHandleBlock* JVMCI::_object_handles = NULL;
+OopStorage* JVMCI::_object_handles = NULL;
 MetadataHandleBlock* JVMCI::_metadata_handles = NULL;
 JVMCIRuntime* JVMCI::_compiler_runtime = NULL;
 JVMCIRuntime* JVMCI::_java_runtime = NULL;
@@ -56,7 +58,9 @@ void JVMCI::initialize_compiler(TRAPS) {
 }
 
 void JVMCI::initialize_globals() {
-  _object_handles = JNIHandleBlock::allocate_block();
+  _object_handles = new OopStorage("JVMCI Global Oop Handles",
+                                   JVMCIGlobalAlloc_lock,
+                                   JVMCIGlobalActive_lock);
   _metadata_handles = MetadataHandleBlock::allocate_block();
   if (UseJVMCINativeLibrary) {
     // There are two runtimes.
@@ -68,14 +72,30 @@ void JVMCI::initialize_globals() {
   }
 }
 
+OopStorage* JVMCI::object_handles() {
+  assert(_object_handles != NULL, "Uninitialized");
+  return _object_handles;
+}
+
 jobject JVMCI::make_global(const Handle& obj) {
-  assert(_object_handles != NULL, "uninitialized");
-  MutexLocker ml(JVMCI_lock);
-  return _object_handles->allocate_handle(obj());
+  assert(!Universe::heap()->is_gc_active(), "can't extend the root set during GC");
+  assert(oopDesc::is_oop(obj()), "not an oop");
+  oop* ptr = object_handles()->allocate();
+  jobject res = NULL;
+  if (ptr != NULL) {
+    assert(*ptr == NULL, "invariant");
+    NativeAccess<>::oop_store(ptr, obj());
+    res = reinterpret_cast<jobject>(ptr);
+  } else {
+    vm_exit_out_of_memory(sizeof(oop), OOM_MALLOC_ERROR,
+                          "Cannot create JVMCI oop handle");
+  }
+  return res;
 }
 
 bool JVMCI::is_global_handle(jobject handle) {
-  return _object_handles->chain_contains(handle);
+  const oop* ptr = reinterpret_cast<oop*>(handle);
+  return object_handles()->allocation_status(ptr) == OopStorage::ALLOCATED_ENTRY;
 }
 
 jmetadata JVMCI::allocate_handle(const methodHandle& handle) {

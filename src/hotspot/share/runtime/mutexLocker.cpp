@@ -157,6 +157,8 @@ Mutex*   CDSClassFileStream_lock      = NULL;
 
 #if INCLUDE_JVMCI
 Monitor* JVMCI_lock                   = NULL;
+Mutex*   JVMCIGlobalAlloc_lock        = NULL;
+Mutex*   JVMCIGlobalActive_lock       = NULL;
 #endif
 
 
@@ -354,6 +356,8 @@ void mutex_init() {
 
 #if INCLUDE_JVMCI
   def(JVMCI_lock                   , PaddedMonitor, nonleaf+2,   true,  Monitor::_safepoint_check_always);
+  def(JVMCIGlobalAlloc_lock        , PaddedMutex  , nonleaf,     true,  Monitor::_safepoint_check_never);
+  def(JVMCIGlobalActive_lock       , PaddedMutex  , nonleaf-1,   true,  Monitor::_safepoint_check_never);
 #endif
 }
 

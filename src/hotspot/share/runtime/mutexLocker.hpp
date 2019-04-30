@@ -155,6 +155,8 @@ extern Monitor* CodeHeapStateAnalytics_lock;     // lock print functions against
 
 #if INCLUDE_JVMCI
 extern Monitor* JVMCI_lock;                      // Monitor to control initialization of JVMCI
+extern Mutex*   JVMCIGlobalAlloc_lock;           // JVMCI global storage allocate list lock
+extern Mutex*   JVMCIGlobalActive_lock;          // JVMCI global storage active list lock
 #endif
 
 // A MutexLocker provides mutual exclusion with respect to a given mutex

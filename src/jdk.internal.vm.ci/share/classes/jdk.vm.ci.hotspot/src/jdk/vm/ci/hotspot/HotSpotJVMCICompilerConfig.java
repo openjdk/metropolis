@@ -35,6 +35,8 @@ import jdk.vm.ci.runtime.JVMCIRuntime;
 import jdk.vm.ci.services.JVMCIPermission;
 import jdk.vm.ci.services.JVMCIServiceLocator;
 
+import static jdk.vm.ci.services.Services.IS_IN_NATIVE_IMAGE;
+
 final class HotSpotJVMCICompilerConfig {
 
     /**
@@ -115,13 +117,15 @@ final class HotSpotJVMCICompilerConfig {
      * Opens all JVMCI packages to {@code otherModule}.
      */
     private static void openJVMCITo(Module otherModule) {
-        Module jvmci = HotSpotJVMCICompilerConfig.class.getModule();
-        if (jvmci != otherModule) {
-            Set<String> packages = jvmci.getPackages();
-            for (String pkg : packages) {
-                boolean opened = jvmci.isOpen(pkg, otherModule);
-                if (!opened) {
-                    jvmci.addOpens(pkg, otherModule);
+        if (!IS_IN_NATIVE_IMAGE) {
+            Module jvmci = HotSpotJVMCICompilerConfig.class.getModule();
+            if (jvmci != otherModule) {
+                Set<String> packages = jvmci.getPackages();
+                for (String pkg : packages) {
+                    boolean opened = jvmci.isOpen(pkg, otherModule);
+                    if (!opened) {
+                        jvmci.addOpens(pkg, otherModule);
+                    }
                 }
             }
         }

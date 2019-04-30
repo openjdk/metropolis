@@ -30,12 +30,12 @@
 class BoolObjectClosure;
 class constantPoolHandle;
 class JavaThread;
-class JNIHandleBlock;
 class JVMCIEnv;
 class JVMCIRuntime;
 class Metadata;
 class MetadataHandleBlock;
 class OopClosure;
+class OopStorage;
 
 struct _jmetadata;
 typedef struct _jmetadata *jmetadata;
@@ -46,7 +46,9 @@ class JVMCI : public AllStatic {
 
  private:
   // Handles to objects in the HotSpot heap.
-  static JNIHandleBlock* _object_handles;
+  static OopStorage* _object_handles;
+
+  static OopStorage* object_handles();
 
   // Handles to Metadata objects.
   static MetadataHandleBlock* _metadata_handles;
