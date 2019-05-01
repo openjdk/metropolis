@@ -133,14 +133,9 @@ void JVMCI::do_unloading(bool unloading_occurred) {
   }
 }
 
-CompLevel JVMCI::adjust_comp_level(const methodHandle& method, bool is_osr, CompLevel level, JavaThread* thread) {
-  return compiler_runtime()->adjust_comp_level(method, is_osr, level, thread);
-}
-
 bool JVMCI::is_compiler_initialized() {
   return compiler_runtime()->is_HotSpotJVMCIRuntime_initialized();
 }
-
 
 void JVMCI::shutdown() {
   if (compiler_runtime() != NULL) {

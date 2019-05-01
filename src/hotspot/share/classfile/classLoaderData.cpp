@@ -1,5 +1,5 @@
  /*
- * Copyright (c) 2012, 2018, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012, 2019, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -288,7 +288,7 @@ bool ClassLoaderData::try_claim(int claim) {
 // it is being defined, therefore _keep_alive is not volatile or atomic.
 void ClassLoaderData::inc_keep_alive() {
   if (is_unsafe_anonymous()) {
-    assert(_keep_alive >= 0, "Invalid keep alive increment count");
+    assert(_keep_alive > 0, "Invalid keep alive increment count");
     _keep_alive++;
   }
 }
@@ -449,7 +449,7 @@ void ClassLoaderData::record_dependency(const Klass* k) {
 
 void ClassLoaderData::add_class(Klass* k, bool publicize /* true */) {
   {
-    MutexLockerEx ml(metaspace_lock(), Mutex::_no_safepoint_check_flag);
+    MutexLocker ml(metaspace_lock(), Mutex::_no_safepoint_check_flag);
     Klass* old_value = _klasses;
     k->set_next_link(old_value);
     // Link the new item into the list, making sure the linked class is stable
@@ -549,7 +549,7 @@ ModuleEntryTable* ClassLoaderData::modules() {
       modules = new ModuleEntryTable(ModuleEntryTable::_moduletable_entry_size);
 
       {
-        MutexLockerEx m1(metaspace_lock(), Mutex::_no_safepoint_check_flag);
+        MutexLocker m1(metaspace_lock(), Mutex::_no_safepoint_check_flag);
         // Ensure _modules is stable, since it is examined without a lock
         OrderAccess::release_store(&_modules, modules);
       }
@@ -743,7 +743,7 @@ ClassLoaderMetaspace* ClassLoaderData::metaspace_non_null() {
   // Lock-free access requires load_acquire.
   ClassLoaderMetaspace* metaspace = OrderAccess::load_acquire(&_metaspace);
   if (metaspace == NULL) {
-    MutexLockerEx ml(_metaspace_lock,  Mutex::_no_safepoint_check_flag);
+    MutexLocker ml(_metaspace_lock,  Mutex::_no_safepoint_check_flag);
     // Check if _metaspace got allocated while we were waiting for this lock.
     if ((metaspace = _metaspace) == NULL) {
       if (this == the_null_class_loader_data()) {
@@ -764,7 +764,7 @@ ClassLoaderMetaspace* ClassLoaderData::metaspace_non_null() {
 }
 
 OopHandle ClassLoaderData::add_handle(Handle h) {
-  MutexLockerEx ml(metaspace_lock(),  Mutex::_no_safepoint_check_flag);
+  MutexLocker ml(metaspace_lock(),  Mutex::_no_safepoint_check_flag);
   record_modified_oops();
   return OopHandle(_handles.add(h()));
 }
@@ -779,7 +779,7 @@ void ClassLoaderData::remove_handle(OopHandle h) {
 }
 
 void ClassLoaderData::init_handle_locked(OopHandle& dest, Handle h) {
-  MutexLockerEx ml(metaspace_lock(),  Mutex::_no_safepoint_check_flag);
+  MutexLocker ml(metaspace_lock(),  Mutex::_no_safepoint_check_flag);
   if (dest.resolve() != NULL) {
     return;
   } else {
@@ -792,7 +792,7 @@ void ClassLoaderData::init_handle_locked(OopHandle& dest, Handle h) {
 void ClassLoaderData::add_to_deallocate_list(Metadata* m) {
   // Metadata in shared region isn't deleted.
   if (!m->is_shared()) {
-    MutexLockerEx ml(metaspace_lock(),  Mutex::_no_safepoint_check_flag);
+    MutexLocker ml(metaspace_lock(),  Mutex::_no_safepoint_check_flag);
     if (_deallocate_list == NULL) {
       _deallocate_list = new (ResourceObj::C_HEAP, mtClass) GrowableArray<Metadata*>(100, true);
     }

@@ -38,7 +38,6 @@
 #include "gc/g1/g1RootClosures.hpp"
 #include "gc/g1/g1RootProcessor.hpp"
 #include "gc/g1/heapRegion.inline.hpp"
-#include "gc/shared/oopStorageParState.hpp"
 #include "gc/shared/referenceProcessor.hpp"
 #include "memory/allocation.inline.hpp"
 #include "runtime/mutex.hpp"
@@ -54,7 +53,7 @@ void G1RootProcessor::worker_has_discovered_all_strong_classes() {
   uint new_value = (uint)Atomic::add(1, &_n_workers_discovered_strong_classes);
   if (new_value == n_workers()) {
     // This thread is last. Notify the others.
-    MonitorLockerEx ml(&_lock, Mutex::_no_safepoint_check_flag);
+    MonitorLocker ml(&_lock, Mutex::_no_safepoint_check_flag);
     _lock.notify_all();
   }
 }
@@ -63,9 +62,9 @@ void G1RootProcessor::wait_until_all_strong_classes_discovered() {
   assert(ClassUnloadingWithConcurrentMark, "Currently only needed when doing G1 Class Unloading");
 
   if ((uint)_n_workers_discovered_strong_classes != n_workers()) {
-    MonitorLockerEx ml(&_lock, Mutex::_no_safepoint_check_flag);
+    MonitorLocker ml(&_lock, Mutex::_no_safepoint_check_flag);
     while ((uint)_n_workers_discovered_strong_classes != n_workers()) {
-      _lock.wait(Mutex::_no_safepoint_check_flag, 0, false);
+      ml.wait(0);
     }
   }
 }
@@ -74,7 +73,6 @@ G1RootProcessor::G1RootProcessor(G1CollectedHeap* g1h, uint n_workers) :
     _g1h(g1h),
     _process_strong_tasks(G1RP_PS_NumElements),
     _srs(n_workers),
-    _par_state_string(StringTable::weak_storage()),
     _lock(Mutex::leaf, "G1 Root Scanning barrier lock", false, Monitor::_safepoint_check_never),
     _n_workers_discovered_strong_classes(0) {}
 

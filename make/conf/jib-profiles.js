@@ -755,7 +755,11 @@ var getJibProfilesProfiles = function (input, common, data) {
             profiles[cmpBaselineName] = clone(profiles[name + suffix]);
             // Only compare the images target. This should pressumably be expanded
             // to include more build targets when possible.
-            profiles[cmpBaselineName].default_make_targets = [ "images" ];
+            profiles[cmpBaselineName].default_make_targets = [ "images", "test-image" ];
+            if (name == "linux-x64") {
+                profiles[cmpBaselineName].default_make_targets
+                    = concat(profiles[cmpBaselineName].default_make_targets, "docs");
+            }
             profiles[cmpBaselineName].make_args = [ "COMPARE_BUILD=CONF=" ];
             // Do not inherit artifact definitions from base profile
             delete profiles[cmpBaselineName].artifacts;
@@ -1279,7 +1283,10 @@ var getVersion = function (feature, interim, update, patch) {
     var version = (feature != null ? feature : version_numbers.get("DEFAULT_VERSION_FEATURE"))
         + "." + (interim != null ? interim : version_numbers.get("DEFAULT_VERSION_INTERIM"))
         + "." + (update != null ? update :  version_numbers.get("DEFAULT_VERSION_UPDATE"))
-        + "." + (patch != null ? patch : version_numbers.get("DEFAULT_VERSION_PATCH"));
+        + "." + (patch != null ? patch : version_numbers.get("DEFAULT_VERSION_PATCH"))
+        + "." + version_numbers.get("DEFAULT_VERSION_EXTRA1")
+        + "." + version_numbers.get("DEFAULT_VERSION_EXTRA2")
+        + "." + version_numbers.get("DEFAULT_VERSION_EXTRA3");
     while (version.match(".*\\.0$")) {
         version = version.substring(0, version.length - 2);
     }

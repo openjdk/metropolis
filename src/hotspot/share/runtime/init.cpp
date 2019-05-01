@@ -125,6 +125,7 @@ jint init_globals() {
   accessFlags_init();
   templateTable_init();
   InterfaceSupport_init();
+  VMRegImpl::set_regName();  // need this before generate_stubs (for printing oop maps).
   SharedRuntime::generate_stubs();
   universe2_init();  // dependent on codeCache_init and stubRoutines_init1
   javaClasses_init();// must happen after vtable initialization, before referenceProcessor_init
@@ -147,7 +148,6 @@ jint init_globals() {
     JVMCI::initialize_globals();
   }
 #endif
-  VMRegImpl::set_regName();
 
   if (!universe_post_init()) {
     return JNI_ERR;
@@ -199,15 +199,15 @@ bool is_init_completed() {
 }
 
 void wait_init_completed() {
-  MonitorLockerEx ml(InitCompleted_lock, Monitor::_no_safepoint_check_flag);
+  MonitorLocker ml(InitCompleted_lock, Monitor::_no_safepoint_check_flag);
   while (!_init_completed) {
-    ml.wait(Monitor::_no_safepoint_check_flag);
+    ml.wait();
   }
 }
 
 void set_init_completed() {
   assert(Universe::is_fully_initialized(), "Should have completed initialization");
-  MonitorLockerEx ml(InitCompleted_lock, Monitor::_no_safepoint_check_flag);
+  MonitorLocker ml(InitCompleted_lock, Monitor::_no_safepoint_check_flag);
   OrderAccess::release_store(&_init_completed, true);
   ml.notify_all();
 }

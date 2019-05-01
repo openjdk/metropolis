@@ -94,6 +94,7 @@ public:
   size_t used_high() const;
   size_t used_low() const;
   size_t used() const;
+  size_t unused() const;
   size_t allocated() const;
   size_t reclaimed() const;
 
@@ -103,6 +104,7 @@ public:
   size_t unsafe_max_tlab_alloc() const;
 
   bool is_in(uintptr_t addr) const;
+  uint32_t hash_oop(oop obj) const;
 
   // Block
   uintptr_t block_start(uintptr_t addr) const;

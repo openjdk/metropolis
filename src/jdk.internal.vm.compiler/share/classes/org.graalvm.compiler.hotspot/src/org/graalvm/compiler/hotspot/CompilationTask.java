@@ -40,7 +40,6 @@ import org.graalvm.compiler.code.CompilationResult;
 import org.graalvm.compiler.core.CompilationPrinter;
 import org.graalvm.compiler.core.CompilationWrapper;
 import org.graalvm.compiler.core.common.CompilationIdentifier;
-import org.graalvm.compiler.debug.Assertions;
 import org.graalvm.compiler.debug.CounterKey;
 import org.graalvm.compiler.debug.DebugCloseable;
 import org.graalvm.compiler.debug.DebugContext;
@@ -57,7 +56,6 @@ import jdk.vm.ci.hotspot.EventProvider;
 import jdk.vm.ci.hotspot.HotSpotCompilationRequest;
 import jdk.vm.ci.hotspot.HotSpotCompilationRequestResult;
 import jdk.vm.ci.hotspot.HotSpotInstalledCode;
-import jdk.vm.ci.hotspot.HotSpotJVMCICompilerFactory;
 import jdk.vm.ci.hotspot.HotSpotJVMCIRuntime;
 import jdk.vm.ci.hotspot.HotSpotNmethod;
 import jdk.vm.ci.hotspot.HotSpotResolvedJavaMethod;
@@ -93,7 +91,7 @@ public class CompilationTask {
     private final boolean installAsDefault;
 
     private final boolean useProfilingInfo;
-    private final OptionValues options;
+    private final boolean shouldRetainLocalVariables;
 
     final class HotSpotCompilationWrapper extends CompilationWrapper<HotSpotCompilationRequestResult> {
         private final EventProvider.CompilationEvent compilationEvent;
@@ -150,9 +148,8 @@ public class CompilationTask {
                 if (bailout.isPermanent()) {
                     // Respect current action if it has been explicitly set.
                     if (!CompilationBailoutAsFailure.hasBeenSet(values)) {
-                        // Get more info for permanent bailouts during bootstrap
-                        // or when assertions are enabled.
-                        if (Assertions.assertionsEnabled() || compiler.getGraalRuntime().isBootstrapping()) {
+                        // Get more info for permanent bailouts during bootstrap.
+                        if (compiler.getGraalRuntime().isBootstrapping()) {
                             return Diagnose;
                         }
 
@@ -165,9 +162,8 @@ public class CompilationTask {
 
             // Respect current action if it has been explicitly set.
             if (!CompilationFailureAction.hasBeenSet(values)) {
-                // Automatically exit on failure during bootstrap
-                // or when assertions are enabled.
-                if (Assertions.assertionsEnabled() || compiler.getGraalRuntime().isBootstrapping()) {
+                // Automatically exit on failure during bootstrap.
+                if (compiler.getGraalRuntime().isBootstrapping()) {
                     return ExitVM;
                 }
             }
@@ -180,14 +176,14 @@ public class CompilationTask {
             HotSpotResolvedJavaMethod method = getMethod();
             int entryBCI = getEntryBCI();
             final boolean isOSR = entryBCI != JVMCICompiler.INVOCATION_ENTRY_BCI;
-            CompilationStatistics stats = CompilationStatistics.create(options, method, isOSR);
+            CompilationStatistics stats = CompilationStatistics.create(debug.getOptions(), method, isOSR);
 
-            final CompilationPrinter printer = CompilationPrinter.begin(options, compilationId, method, entryBCI);
+            final CompilationPrinter printer = CompilationPrinter.begin(debug.getOptions(), compilationId, method, entryBCI);
 
             try (DebugContext.Scope s = debug.scope("Compiling", new DebugDumpScope(getIdString(), true))) {
                 // Begin the compilation event.
                 compilationEvent.begin();
-                result = compiler.compile(method, entryBCI, useProfilingInfo, compilationId, options, debug);
+                result = compiler.compile(method, entryBCI, useProfilingInfo, shouldRetainLocalVariables, compilationId, debug);
             } catch (Throwable e) {
                 throw debug.handle(e);
             } finally {
@@ -211,14 +207,21 @@ public class CompilationTask {
 
     }
 
-    public CompilationTask(HotSpotJVMCIRuntime jvmciRuntime, HotSpotGraalCompiler compiler, HotSpotCompilationRequest request, boolean useProfilingInfo, boolean installAsDefault,
-                    OptionValues options) {
+    public CompilationTask(HotSpotJVMCIRuntime jvmciRuntime, HotSpotGraalCompiler compiler, HotSpotCompilationRequest request, boolean useProfilingInfo, boolean installAsDefault) {
+        this(jvmciRuntime, compiler, request, useProfilingInfo, false, installAsDefault);
+    }
+
+    public CompilationTask(HotSpotJVMCIRuntime jvmciRuntime, HotSpotGraalCompiler compiler, HotSpotCompilationRequest request, boolean useProfilingInfo, boolean shouldRetainLocalVariables,
+                    boolean installAsDefault) {
         this.jvmciRuntime = jvmciRuntime;
         this.compiler = compiler;
         this.compilationId = new HotSpotCompilationIdentifier(request);
         this.useProfilingInfo = useProfilingInfo;
+        this.shouldRetainLocalVariables = shouldRetainLocalVariables;
         this.installAsDefault = installAsDefault;
+    }
 
+    public OptionValues filterOptions(OptionValues options) {
         /*
          * Disable inlining if HotSpot has it disabled unless it's been explicitly set in Graal.
          */
@@ -237,7 +240,7 @@ public class CompilationTask {
                 newOptions = new OptionValues(options, m);
             }
         }
-        this.options = newOptions;
+        return newOptions;
     }
 
     public HotSpotResolvedJavaMethod getMethod() {
@@ -303,7 +306,8 @@ public class CompilationTask {
      */
     public static final TimerKey CodeInstallationTime = DebugContext.timer("CodeInstallation");
 
-    public HotSpotCompilationRequestResult runCompilation() {
+    public HotSpotCompilationRequestResult runCompilation(OptionValues initialOptions) {
+        OptionValues options = filterOptions(initialOptions);
         SnippetReflectionProvider snippetReflection = compiler.getGraalRuntime().getHostProviders().getSnippetReflection();
         try (DebugContext debug = DebugContext.create(options, new GraalDebugHandlersFactory(snippetReflection))) {
             return runCompilation(debug);
@@ -321,15 +325,14 @@ public class CompilationTask {
         // Log a compilation event.
         EventProvider.CompilationEvent compilationEvent = eventProvider.newCompilationEvent();
 
-        if (installAsDefault) {
+        if (installAsDefault || isOSR) {
             // If there is already compiled code for this method on our level we simply return.
             // JVMCI compiles are always at the highest compile level, even in non-tiered mode so we
             // only need to check for that value.
             if (method.hasCodeAtLevel(entryBCI, config.compilationLevelFullOptimization)) {
                 return HotSpotCompilationRequestResult.failure("Already compiled", false);
             }
-            if (HotSpotGraalCompilerFactory.checkGraalCompileOnlyFilter(method.getDeclaringClass().toJavaName(), method.getName(), method.getSignature().toString(),
-                            HotSpotJVMCICompilerFactory.CompilationLevel.FullOptimization) != HotSpotJVMCICompilerFactory.CompilationLevel.FullOptimization) {
+            if (HotSpotGraalCompilerFactory.shouldExclude(method)) {
                 return HotSpotCompilationRequestResult.failure("GraalCompileOnly excluded", false);
             }
         }

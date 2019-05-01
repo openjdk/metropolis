@@ -301,7 +301,7 @@ void print_statistics() {
   }
 
   if (PrintCodeCache) {
-    MutexLockerEx mu(CodeCache_lock, Mutex::_no_safepoint_check_flag);
+    MutexLocker mu(CodeCache_lock, Mutex::_no_safepoint_check_flag);
     CodeCache::print();
   }
 
@@ -314,7 +314,7 @@ void print_statistics() {
   }
 
   if (PrintCodeCache2) {
-    MutexLockerEx mu(CodeCache_lock, Mutex::_no_safepoint_check_flag);
+    MutexLocker mu(CodeCache_lock, Mutex::_no_safepoint_check_flag);
     CodeCache::print_internals();
   }
 
@@ -369,7 +369,7 @@ void print_statistics() {
   }
 
   if (PrintCodeCache) {
-    MutexLockerEx mu(CodeCache_lock, Mutex::_no_safepoint_check_flag);
+    MutexLocker mu(CodeCache_lock, Mutex::_no_safepoint_check_flag);
     CodeCache::print();
   }
 
@@ -418,14 +418,14 @@ void before_exit(JavaThread* thread) {
   // A CAS or OSMutex would work just fine but then we need to manipulate
   // thread state for Safepoint. Here we use Monitor wait() and notify_all()
   // for synchronization.
-  { MutexLocker ml(BeforeExit_lock);
+  { MonitorLocker ml(BeforeExit_lock);
     switch (_before_exit_status) {
     case BEFORE_EXIT_NOT_RUN:
       _before_exit_status = BEFORE_EXIT_RUNNING;
       break;
     case BEFORE_EXIT_RUNNING:
       while (_before_exit_status == BEFORE_EXIT_RUNNING) {
-        BeforeExit_lock->wait();
+        ml.wait();
       }
       assert(_before_exit_status == BEFORE_EXIT_DONE, "invalid state");
       return;

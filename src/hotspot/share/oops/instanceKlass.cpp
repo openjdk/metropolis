@@ -2187,7 +2187,7 @@ void InstanceKlass::clean_method_data() {
   for (int m = 0; m < methods()->length(); m++) {
     MethodData* mdo = methods()->at(m)->method_data();
     if (mdo != NULL) {
-      MutexLockerEx ml(SafepointSynchronize::is_at_safepoint() ? NULL : mdo->extra_data_lock());
+      MutexLocker ml(SafepointSynchronize::is_at_safepoint() ? NULL : mdo->extra_data_lock());
       mdo->clean_method_data(/*always_clean*/false);
     }
   }
@@ -2436,6 +2436,23 @@ bool InstanceKlass::check_sharing_error_state() {
   }
 
   return (old_state != is_in_error_state());
+}
+
+void InstanceKlass::set_class_loader_type(s2 loader_type) {
+  switch (loader_type) {
+  case ClassLoader::BOOT_LOADER:
+    _misc_flags |= _misc_is_shared_boot_class;
+    break;
+  case ClassLoader::PLATFORM_LOADER:
+    _misc_flags |= _misc_is_shared_platform_class;
+    break;
+  case ClassLoader::APP_LOADER:
+    _misc_flags |= _misc_is_shared_app_class;
+    break;
+  default:
+    ShouldNotReachHere();
+    break;
+  }
 }
 
 #if INCLUDE_JVMTI
@@ -2951,7 +2968,7 @@ void InstanceKlass::add_osr_nmethod(nmethod* n) {
   // only one compilation can be active
   {
     // This is a short non-blocking critical region, so the no safepoint check is ok.
-    MutexLockerEx ml(OsrList_lock, Mutex::_no_safepoint_check_flag);
+    MutexLocker ml(OsrList_lock, Mutex::_no_safepoint_check_flag);
     assert(n->is_osr_method(), "wrong kind of nmethod");
     n->set_osr_link(osr_nmethods_head());
     set_osr_nmethods_head(n);
@@ -2976,7 +2993,7 @@ void InstanceKlass::add_osr_nmethod(nmethod* n) {
 // Remove osr nmethod from the list. Return true if found and removed.
 bool InstanceKlass::remove_osr_nmethod(nmethod* n) {
   // This is a short non-blocking critical region, so the no safepoint check is ok.
-  MutexLockerEx ml(OsrList_lock, Mutex::_no_safepoint_check_flag);
+  MutexLocker ml(OsrList_lock, Mutex::_no_safepoint_check_flag);
   assert(n->is_osr_method(), "wrong kind of nmethod");
   nmethod* last = NULL;
   nmethod* cur  = osr_nmethods_head();
@@ -3020,7 +3037,7 @@ bool InstanceKlass::remove_osr_nmethod(nmethod* n) {
 
 int InstanceKlass::mark_osr_nmethods(const Method* m) {
   // This is a short non-blocking critical region, so the no safepoint check is ok.
-  MutexLockerEx ml(OsrList_lock, Mutex::_no_safepoint_check_flag);
+  MutexLocker ml(OsrList_lock, Mutex::_no_safepoint_check_flag);
   nmethod* osr = osr_nmethods_head();
   int found = 0;
   while (osr != NULL) {
@@ -3036,7 +3053,7 @@ int InstanceKlass::mark_osr_nmethods(const Method* m) {
 
 nmethod* InstanceKlass::lookup_osr_nmethod(const Method* m, int bci, int comp_level, bool match_level) const {
   // This is a short non-blocking critical region, so the no safepoint check is ok.
-  MutexLockerEx ml(OsrList_lock, Mutex::_no_safepoint_check_flag);
+  MutexLocker ml(OsrList_lock, Mutex::_no_safepoint_check_flag);
   nmethod* osr = osr_nmethods_head();
   nmethod* best = NULL;
   while (osr != NULL) {
@@ -3087,7 +3104,7 @@ static void print_vtable(intptr_t* start, int len, outputStream* st) {
   for (int i = 0; i < len; i++) {
     intptr_t e = start[i];
     st->print("%d : " INTPTR_FORMAT, i, e);
-    if (e != 0 && ((Metadata*)e)->is_metaspace_object()) {
+    if (MetaspaceObj::is_valid((Metadata*)e)) {
       st->print(" ");
       ((Metadata*)e)->print_value_on(st);
     }

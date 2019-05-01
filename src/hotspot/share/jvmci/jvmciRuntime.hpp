@@ -102,11 +102,7 @@ class JVMCIRuntime: public CHeapObj<mtJVMCI> {
 
   JVMCIObject _HotSpotJVMCIRuntime_instance;
 
-  CompLevelAdjustment _comp_level_adjustment;
-
   bool _shutdown_called;
-
-  CompLevel adjust_comp_level_inner(const methodHandle& method, bool is_osr, CompLevel level, JavaThread* thread);
 
   JVMCIObject create_jvmci_primitive_type(BasicType type, JVMCI_TRAPS);
 
@@ -136,7 +132,6 @@ class JVMCIRuntime: public CHeapObj<mtJVMCI> {
 
  public:
   JVMCIRuntime() {
-    _comp_level_adjustment = JVMCIRuntime::none;
     _initialized = false;
     _being_initialized = false;
     _shutdown_called = false;
@@ -167,18 +162,6 @@ class JVMCIRuntime: public CHeapObj<mtJVMCI> {
   void initialize_HotSpotJVMCIRuntime(JVMCI_TRAPS);
 
   void call_getCompiler(TRAPS);
-
-  /**
-   * Lets JVMCI modify the compilation level currently selected for a method by
-   * the VM compilation policy.
-   *
-   * @param method the method being scheduled for compilation
-   * @param is_osr specifies if the compilation is an OSR compilation
-   * @param level the compilation level currently selected by the VM compilation policy
-   * @param thread the current thread
-   * @return the compilation level to use for the compilation
-   */
-  CompLevel adjust_comp_level(const methodHandle& method, bool is_osr, CompLevel level, JavaThread* thread);
 
   void shutdown();
 

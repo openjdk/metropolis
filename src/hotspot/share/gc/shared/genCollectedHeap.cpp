@@ -236,7 +236,7 @@ size_t GenCollectedHeap::max_capacity() const {
 // Update the _full_collections_completed counter
 // at the end of a stop-world full GC.
 unsigned int GenCollectedHeap::update_full_collections_completed() {
-  MonitorLockerEx ml(FullGCCount_lock, Mutex::_no_safepoint_check_flag);
+  MonitorLocker ml(FullGCCount_lock, Mutex::_no_safepoint_check_flag);
   assert(_full_collections_completed <= _total_full_collections,
          "Can't complete more collections than were started");
   _full_collections_completed = _total_full_collections;
@@ -250,7 +250,7 @@ unsigned int GenCollectedHeap::update_full_collections_completed() {
 // without synchronizing in any manner with the VM thread (which
 // may already have initiated a STW full collection "concurrently").
 unsigned int GenCollectedHeap::update_full_collections_completed(unsigned int count) {
-  MonitorLockerEx ml(FullGCCount_lock, Mutex::_no_safepoint_check_flag);
+  MonitorLocker ml(FullGCCount_lock, Mutex::_no_safepoint_check_flag);
   assert((_full_collections_completed <= _total_full_collections) &&
          (count <= _total_full_collections),
          "Can't complete more collections than were started");
@@ -827,7 +827,6 @@ void GenCollectedHeap::process_roots(StrongRootsScope* scope,
                                      CLDClosure* weak_cld_closure,
                                      CodeBlobToOopClosure* code_roots) {
   // General roots.
-  assert(Threads::thread_claim_parity() != 0, "must have called prologue code");
   assert(code_roots != NULL, "code root closure should always be set");
   // _n_termination for _process_strong_tasks should be set up stream
   // in a method not running in a GC worker.  Otherwise the GC worker

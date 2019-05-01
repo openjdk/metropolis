@@ -762,7 +762,7 @@ C2V_VMENTRY(jint, installCode, (JNIEnv *env, jobject, jobject target, jobject co
     stringStream s;
     // Dump code cache into a buffer before locking the tty,
     {
-      MutexLockerEx mu(CodeCache_lock, Mutex::_no_safepoint_check_flag);
+      MutexLocker mu(CodeCache_lock, Mutex::_no_safepoint_check_flag);
       CodeCache::print_summary(&s, false);
     }
     ttyLocker ttyl;

@@ -25,10 +25,11 @@
 #ifndef SHARE_CLASSFILE_SYSTEMDICTIONARY_HPP
 #define SHARE_CLASSFILE_SYSTEMDICTIONARY_HPP
 
-#include "classfile/classLoader.hpp"
+#include "classfile/classLoaderData.hpp"
 #include "oops/objArrayOop.hpp"
 #include "oops/symbol.hpp"
 #include "runtime/java.hpp"
+#include "runtime/mutexLocker.hpp"
 #include "runtime/reflectionUtils.hpp"
 #include "runtime/signature.hpp"
 #include "utilities/hashtable.hpp"
@@ -72,6 +73,7 @@
 // of placeholders must hold the SystemDictionary_lock.
 //
 
+class BootstrapInfo;
 class ClassFileStream;
 class Dictionary;
 class PlaceholderTable;
@@ -175,6 +177,7 @@ class OopStorage;
   do_klass(AssertionStatusDirectives_klass,             java_lang_AssertionStatusDirectives                   ) \
   do_klass(StringBuffer_klass,                          java_lang_StringBuffer                                ) \
   do_klass(StringBuilder_klass,                         java_lang_StringBuilder                               ) \
+  do_klass(UnsafeConstants_klass,                       jdk_internal_misc_UnsafeConstants                     ) \
   do_klass(internal_Unsafe_klass,                       jdk_internal_misc_Unsafe                              ) \
   do_klass(module_Modules_klass,                        jdk_internal_module_Modules                           ) \
                                                                                                                 \
@@ -215,6 +218,7 @@ class OopStorage;
 
 
 class SystemDictionary : AllStatic {
+  friend class BootstrapInfo;
   friend class VMStructs;
   friend class SystemDictionaryHandles;
 
@@ -520,21 +524,7 @@ public:
                                                TRAPS);
 
   // ask Java to compute a constant by invoking a BSM given a Dynamic_info CP entry
-  static Handle    link_dynamic_constant(Klass* caller,
-                                         int condy_index,
-                                         Handle bootstrap_specifier,
-                                         Symbol* name,
-                                         Symbol* type,
-                                         TRAPS);
-
-  // ask Java to create a dynamic call site, while linking an invokedynamic op
-  static methodHandle find_dynamic_call_site_invoker(Klass* caller,
-                                                     int indy_index,
-                                                     Handle bootstrap_method,
-                                                     Symbol* name,
-                                                     Symbol* type,
-                                                     Handle *appendix_result,
-                                                     TRAPS);
+  static void      invoke_bootstrap_method(BootstrapInfo& bootstrap_specifier, TRAPS);
 
   // Record the error when the first attempt to resolve a reference from a constant
   // pool entry to a class fails.
