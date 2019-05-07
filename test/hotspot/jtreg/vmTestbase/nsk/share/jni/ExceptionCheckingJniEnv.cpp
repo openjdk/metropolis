@@ -22,6 +22,7 @@
  * questions.
  */
 
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -97,7 +98,7 @@ class JNIVerifier {
     }
   }
 
-  int DecimalToAsciiRec(char *str, long line) {
+  int DecimalToAsciiRec(char *str, int line) {
     if (line == 0) {
       return 0;
     }
@@ -112,21 +113,27 @@ class JNIVerifier {
 
   // Implementing a simple version of sprintf for "%d"...
   void DecimalToAscii(char *str, int line) {
-    // Go to long so that the INT_MIN case can be handled seemlessly.
-    long internal_line = line;
-    if (internal_line == 0) {
+    if (line == 0) {
       str[0] = '0';
       str[1] = '\0';
       return;
     }
 
-    if (internal_line < 0) {
+    // Special case for INT32_MIN because otherwise the *1 below will overflow
+    // and it won't work. Let us just be simple here due to this being for
+    // tests.
+    if (line == INT32_MIN) {
+      strcat(str, "-2147483648");
+      return;
+    }
+
+    if (line < 0) {
       *str = '-';
-      internal_line *= -1;
+      line *= -1;
       str++;
     }
 
-    str[DecimalToAsciiRec(str, internal_line)] = '\0';
+    str[DecimalToAsciiRec(str, line)] = '\0';
   }
 
   void GenerateErrorMessage() {
@@ -419,6 +426,17 @@ jmethodID ExceptionCheckingJniEnv::GetMethodID(jclass klass, const char* name, c
   return marker.ResultNotNull(_jni_env->GetMethodID(klass, name, sig));
 }
 
+jmethodID ExceptionCheckingJniEnv::GetStaticMethodID(jclass klass, const char* name, const char* sig,
+                                                     int line, const char* file_name) {
+  JNIVerifier<jmethodID> marker(this, "GetStaticMethodID", klass, name, sig, line, file_name);
+  return marker.ResultNotNull(_jni_env->GetStaticMethodID(klass, name, sig));
+}
+
+jboolean ExceptionCheckingJniEnv::IsSameObject(jobject ref1, jobject ref2, int line, const char* file_name) {
+  JNIVerifier<> marker(this, "IsSameObject", ref1, ref2, line, file_name);
+  return _jni_env->IsSameObject(ref1, ref2);
+}
+
 jobject ExceptionCheckingJniEnv::NewObject(jclass klass, jmethodID methodID,
                                            int line, const char* file_name, ...) {
   // In the case of NewObject, we miss the extra arguments passed to NewObject sadly.
@@ -429,4 +447,25 @@ jobject ExceptionCheckingJniEnv::NewObject(jclass klass, jmethodID methodID,
   jobject result = marker.ResultNotNull(_jni_env->NewObjectV(klass, methodID, args));
   va_end(args);
   return result;
+}
+
+jobject ExceptionCheckingJniEnv::CallObjectMethod(jobject obj, jmethodID methodID, int line,
+                         const char* file_name, ...) {
+  JNIVerifier<> marker(this, "CallObjectMethod", obj, methodID, line, file_name);
+
+  va_list args;
+  va_start(args, file_name);
+  jobject result = _jni_env->CallObjectMethodV(obj, methodID, args);
+  va_end(args);
+  return result;
+}
+
+void ExceptionCheckingJniEnv::CallVoidMethod(jobject obj, jmethodID methodID, int line,
+                    const char* file_name, ...) {
+  JNIVerifier<> marker(this, "CallVoidMethod", obj, methodID, line, file_name);
+
+  va_list args;
+  va_start(args, file_name);
+  _jni_env->CallVoidMethodV(obj, methodID, args);
+  va_end(args);
 }

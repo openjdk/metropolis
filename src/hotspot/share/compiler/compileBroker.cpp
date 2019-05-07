@@ -1062,13 +1062,13 @@ void CompileBroker::compile_method_base(const methodHandle& method,
     }
 
 #if INCLUDE_JVMCI
-    if (UseJVMCICompiler) {
-      if (blocking) {
-        // Don't allow blocking compiles for requests triggered by JVMCI.
-        if (thread->is_Compiler_thread()) {
-          blocking = false;
-        }
+    if (UseJVMCICompiler && blocking) {
+      // Don't allow blocking compiles for requests triggered by JVMCI.
+      if (thread->is_Compiler_thread()) {
+        blocking = false;
+      }
 
+      if (!UseJVMCINativeLibrary) {
         // Don't allow blocking compiles if inside a class initializer or while performing class loading
         vframeStream vfst((JavaThread*) thread);
         for (; !vfst.at_end(); vfst.next()) {
@@ -1079,19 +1079,19 @@ void CompileBroker::compile_method_base(const methodHandle& method,
             break;
           }
         }
+      }
 
-        // Don't allow blocking compilation requests to JVMCI
-        // if JVMCI itself is not yet initialized
-        if (!JVMCI::is_compiler_initialized() && compiler(comp_level)->is_jvmci()) {
-          blocking = false;
-        }
+      // Don't allow blocking compilation requests to JVMCI
+      // if JVMCI itself is not yet initialized
+      if (!JVMCI::is_compiler_initialized() && compiler(comp_level)->is_jvmci()) {
+        blocking = false;
+      }
 
-        // Don't allow blocking compilation requests if we are in JVMCIRuntime::shutdown
-        // to avoid deadlock between compiler thread(s) and threads run at shutdown
-        // such as the DestroyJavaVM thread.
-        if (JVMCI::shutdown_called()) {
-          blocking = false;
-        }
+      // Don't allow blocking compilation requests if we are in JVMCIRuntime::shutdown
+      // to avoid deadlock between compiler thread(s) and threads run at shutdown
+      // such as the DestroyJavaVM thread.
+      if (JVMCI::shutdown_called()) {
+        blocking = false;
       }
     }
 #endif // INCLUDE_JVMCI
@@ -2064,7 +2064,7 @@ void CompileBroker::invoke_compiler_on_method(CompileTask* task) {
       compilable = ciEnv::MethodCompilable_never;
     } else {
       JVMCICompileState compile_state(task, system_dictionary_modification_counter);
-      JVMCIEnv env(&compile_state, __FILE__, __LINE__);
+      JVMCIEnv env(thread, &compile_state, __FILE__, __LINE__);
       methodHandle method(thread, target_handle);
       env.runtime()->compile_method(&env, jvmci, method, osr_bci);
 

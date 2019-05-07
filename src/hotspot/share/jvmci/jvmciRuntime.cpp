@@ -655,7 +655,7 @@ JRT_END
 
 // private static JVMCIRuntime JVMCI.initializeRuntime()
 JVM_ENTRY_NO_ENV(jobject, JVM_GetJVMCIRuntime(JNIEnv *env, jclass c))
-  JNI_JVMCIENV(env);
+  JNI_JVMCIENV(thread, env);
   if (!EnableJVMCI) {
     JVMCI_THROW_MSG_NULL(InternalError, "JVMCI is not enabled");
   }
@@ -692,6 +692,14 @@ void JVMCINMethodData::add_failed_speculation(nmethod* nm, jlong speculation) {
   int length = (int) speculation;
   if (index + length > (uint) nm->speculations_size()) {
     fatal(INTPTR_FORMAT "[index: %d, length: %d] out of bounds wrt encoded speculations of length %u", speculation, index, length, nm->speculations_size());
+  }
+  address data = nm->speculations_begin() + index;
+  FailedSpeculation::add_failed_speculation(nm, _failed_speculations, data, length);
+}
+
+oop JVMCINMethodData::get_nmethod_mirror(nmethod* nm) {
+  if (_nmethod_mirror_index == -1) {
+    return NULL;
   }
   address data = nm->speculations_begin() + index;
   FailedSpeculation::add_failed_speculation(nm, _failed_speculations, data, length);
@@ -848,6 +856,35 @@ JVMCIObject JVMCIRuntime::create_jvmci_primitive_type(BasicType type, JVMCI_TRAP
     }
     return JVMCIENV->wrap(result);
   }
+
+  _initialized = true;
+  _being_initialized = false;
+  JVMCI_lock->notify_all();
+}
+
+JVMCIObject JVMCIRuntime::create_jvmci_primitive_type(BasicType type, JVMCI_TRAPS) {
+  Thread* THREAD = Thread::current();
+  // These primitive types are long lived and are created before the runtime is fully set up
+  // so skip registering them for scanning.
+  JVMCIObject mirror = JVMCIENV->get_object_constant(java_lang_Class::primitive_mirror(type), false, true);
+  if (JVMCIENV->is_hotspot()) {
+    JavaValue result(T_OBJECT);
+    JavaCallArguments args;
+    args.push_oop(Handle(THREAD, HotSpotJVMCI::resolve(mirror)));
+    args.push_int(type2char(type));
+    JavaCalls::call_static(&result, HotSpotJVMCI::HotSpotResolvedPrimitiveType::klass(), vmSymbols::fromMetaspace_name(), vmSymbols::primitive_fromMetaspace_signature(), &args, CHECK_(JVMCIObject()));
+
+    return JVMCIENV->wrap(JNIHandles::make_local((oop)result.get_jobject()));
+  } else {
+    JNIAccessMark jni(JVMCIENV);
+    jobject result = jni()->CallStaticObjectMethod(JNIJVMCI::HotSpotResolvedPrimitiveType::clazz(),
+                                           JNIJVMCI::HotSpotResolvedPrimitiveType_fromMetaspace_method(),
+                                           mirror.as_jobject(), type2char(type));
+    if (jni()->ExceptionCheck()) {
+      return JVMCIObject();
+    }
+    return JVMCIENV->wrap(result);
+  }
 }
 
 void JVMCIRuntime::initialize_JVMCI(JVMCI_TRAPS) {
@@ -878,6 +915,8 @@ JVM_ENTRY_NO_ENV(void, JVM_RegisterJVMCINatives(JNIEnv *env, jclass c2vmClass))
 #endif
 
   JNI_JVMCIENV(env);
+
+  JNI_JVMCIENV(thread, env);
 
   if (!EnableJVMCI) {
     JVMCI_THROW_MSG(InternalError, "JVMCI is not enabled");
@@ -1351,6 +1390,10 @@ void JVMCIRuntime::compile_method(JVMCIEnv* JVMCIENV, JVMCICompiler* compiler, c
     // no OSR compilations during bootstrap - the compiler is just too slow at this point,
     // and we know that there are no endless loops
     compile_state->set_failure(true, "No OSR during boostrap");
+    return;
+  }
+  if (JVMCI::shutdown_called()) {
+    compile_state->set_failure(false, "Avoiding compilation during shutdown");
     return;
   }
 
