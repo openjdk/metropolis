@@ -107,6 +107,7 @@ class JVMCITraceMark : public StackObj {
   }
 };
 
+
 Handle JavaArgumentUnboxer::next_arg(BasicType expectedType) {
   assert(_index < _args->length(), "out of bounds");
   oop arg=((objArrayOop) (_args))->obj_at(_index++);
@@ -1767,109 +1768,6 @@ C2V_VMENTRY(void, compileToBytecode, (JNIEnv* env, jobject, jobject lambda_form_
     JVMCI_THROW_MSG(IllegalArgumentException,
                     err_msg("Unexpected type: %s", lambda_form->klass()->external_name()))
   }
-C2V_END
-
-C2V_VMENTRY(int, getIdentityHashCode, (JNIEnv* env, jobject, jobject object))
-  Handle obj = JVMCIENV->asConstant(JVMCIENV->wrap(object), JVMCI_CHECK_0);
-  return obj->identity_hash();
-C2V_END
-
-C2V_VMENTRY(jboolean, isInternedString, (JNIEnv* env, jobject, jobject object))
-  Handle str = JVMCIENV->asConstant(JVMCIENV->wrap(object), JVMCI_CHECK_0);
-  if (!java_lang_String::is_instance(str())) {
-    return false;
-  }
-  int len;
-  jchar* name = java_lang_String::as_unicode_string(str(), len, CHECK_0);
-  return (StringTable::lookup(name, len) != NULL);
-C2V_END
-
-
-C2V_VMENTRY(jobject, unboxPrimitive, (JNIEnv* env, jobject, jobject object))
-  if (object == NULL) {
-    JVMCI_THROW_0(NullPointerException);
-  }
-  Handle box = JVMCIENV->asConstant(JVMCIENV->wrap(object), JVMCI_CHECK_NULL);
-  BasicType type = java_lang_boxing_object::basic_type(box());
-  jvalue result;
-  if (java_lang_boxing_object::get_value(box(), &result) == T_ILLEGAL) {
-    return NULL;
-  }
-  JVMCIObject boxResult = JVMCIENV->create_box(type, &result, JVMCI_CHECK_NULL);
-  return JVMCIENV->get_jobject(boxResult);
-C2V_END
-
-C2V_VMENTRY(jobject, boxPrimitive, (JNIEnv* env, jobject, jobject object))
-  if (object == NULL) {
-    JVMCI_THROW_0(NullPointerException);
-  }
-  JVMCIObject box = JVMCIENV->wrap(object);
-  BasicType type = JVMCIENV->get_box_type(box);
-  if (type == T_ILLEGAL) {
-    return NULL;
-  }
-  jvalue value = JVMCIENV->get_boxed_value(type, box);
-  JavaValue box_result(T_OBJECT);
-  JavaCallArguments jargs;
-  Klass* box_klass = NULL;
-  Symbol* box_signature = NULL;
-#define BOX_CASE(bt, v, argtype, name)           \
-  case bt: \
-    jargs.push_##argtype(value.v); \
-    box_klass = SystemDictionary::name##_klass(); \
-    box_signature = vmSymbols::name##_valueOf_signature(); \
-    break
-
-  switch (type) {
-    BOX_CASE(T_BOOLEAN, z, int, Boolean);
-    BOX_CASE(T_BYTE, b, int, Byte);
-    BOX_CASE(T_CHAR, c, int, Character);
-    BOX_CASE(T_SHORT, s, int, Short);
-    BOX_CASE(T_INT, i, int, Integer);
-    BOX_CASE(T_LONG, j, long, Long);
-    BOX_CASE(T_FLOAT, f, float, Float);
-    BOX_CASE(T_DOUBLE, d, double, Double);
-    default:
-      ShouldNotReachHere();
-  }
-#undef BOX_CASE
-
-  JavaCalls::call_static(&box_result,
-                         box_klass,
-                         vmSymbols::valueOf_name(),
-                         box_signature, &jargs, CHECK_NULL);
-  oop hotspot_box = (oop) box_result.get_jobject();
-  JVMCIObject result = JVMCIENV->get_object_constant(hotspot_box, false);
-  return JVMCIENV->get_jobject(result);
-C2V_END
-
-C2V_VMENTRY(jobjectArray, getDeclaredConstructors, (JNIEnv* env, jobject, jobject holder))
-  if (holder == NULL) {
-    JVMCI_THROW_0(NullPointerException);
-  }
-  Klass* klass = JVMCIENV->asKlass(holder);
-  if (!klass->is_instance_klass()) {
-    JVMCIObjectArray methods = JVMCIENV->new_ResolvedJavaMethod_array(0, JVMCI_CHECK_NULL);
-    return JVMCIENV->get_jobjectArray(methods);
-  }
-
-  InstanceKlass* iklass = InstanceKlass::cast(klass);
-  // Ensure class is linked
-  iklass->link_class(CHECK_NULL);
-
-  GrowableArray<Method*> constructors_array;
-  for (int i = 0; i < iklass->methods()->length(); i++) {
-    Method* m = iklass->methods()->at(i);
-    if (m->is_initializer() && !m->is_static()) {
-      constructors_array.append(m);
-    }
-  }
-  JVMCIObjectArray methods = JVMCIENV->new_ResolvedJavaMethod_array(constructors_array.length(), JVMCI_CHECK_NULL);
-  for (int i = 0; i < constructors_array.length(); i++) {
-    JVMCIObject method = JVMCIENV->get_jvmci_method(constructors_array.at(i), JVMCI_CHECK_NULL);
-    JVMCIENV->put_object_at(methods, i, method);
-  }
-  return JVMCIENV->get_jobjectArray(methods);
 C2V_END
 
 C2V_VMENTRY_0(int, getIdentityHashCode, (JNIEnv* env, jobject, jobject object))

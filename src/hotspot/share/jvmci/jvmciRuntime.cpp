@@ -701,14 +701,6 @@ oop JVMCINMethodData::get_nmethod_mirror(nmethod* nm) {
   if (_nmethod_mirror_index == -1) {
     return NULL;
   }
-  address data = nm->speculations_begin() + index;
-  FailedSpeculation::add_failed_speculation(nm, _failed_speculations, data, length);
-}
-
-oop JVMCINMethodData::get_nmethod_mirror(nmethod* nm) {
-  if (_nmethod_mirror_index == -1) {
-    return NULL;
-  }
   return nm->oop_at(_nmethod_mirror_index);
 }
 
@@ -856,35 +848,6 @@ JVMCIObject JVMCIRuntime::create_jvmci_primitive_type(BasicType type, JVMCI_TRAP
     }
     return JVMCIENV->wrap(result);
   }
-
-  _initialized = true;
-  _being_initialized = false;
-  JVMCI_lock->notify_all();
-}
-
-JVMCIObject JVMCIRuntime::create_jvmci_primitive_type(BasicType type, JVMCI_TRAPS) {
-  Thread* THREAD = Thread::current();
-  // These primitive types are long lived and are created before the runtime is fully set up
-  // so skip registering them for scanning.
-  JVMCIObject mirror = JVMCIENV->get_object_constant(java_lang_Class::primitive_mirror(type), false, true);
-  if (JVMCIENV->is_hotspot()) {
-    JavaValue result(T_OBJECT);
-    JavaCallArguments args;
-    args.push_oop(Handle(THREAD, HotSpotJVMCI::resolve(mirror)));
-    args.push_int(type2char(type));
-    JavaCalls::call_static(&result, HotSpotJVMCI::HotSpotResolvedPrimitiveType::klass(), vmSymbols::fromMetaspace_name(), vmSymbols::primitive_fromMetaspace_signature(), &args, CHECK_(JVMCIObject()));
-
-    return JVMCIENV->wrap(JNIHandles::make_local((oop)result.get_jobject()));
-  } else {
-    JNIAccessMark jni(JVMCIENV);
-    jobject result = jni()->CallStaticObjectMethod(JNIJVMCI::HotSpotResolvedPrimitiveType::clazz(),
-                                           JNIJVMCI::HotSpotResolvedPrimitiveType_fromMetaspace_method(),
-                                           mirror.as_jobject(), type2char(type));
-    if (jni()->ExceptionCheck()) {
-      return JVMCIObject();
-    }
-    return JVMCIENV->wrap(result);
-  }
 }
 
 void JVMCIRuntime::initialize_JVMCI(JVMCI_TRAPS) {
@@ -913,8 +876,6 @@ JVM_ENTRY_NO_ENV(void, JVM_RegisterJVMCINatives(JNIEnv *env, jclass c2vmClass))
 #else
   fatal("check TLAB allocation code for address space conflicts");
 #endif
-
-  JNI_JVMCIENV(env);
 
   JNI_JVMCIENV(thread, env);
 

@@ -24,6 +24,7 @@
 
 #include "precompiled.hpp"
 #include "classfile/stringTable.hpp"
+#include "code/codeCache.hpp"
 #include "memory/oopFactory.hpp"
 #include "memory/resourceArea.hpp"
 #include "oops/typeArrayOop.inline.hpp"
@@ -85,46 +86,6 @@ void JVMCIEnv::copy_saved_properties() {
     if (HAS_PENDING_EXCEPTION) {
       JVMCIRuntime::exit_on_pending_exception(NULL, "Error initializing jdk.vm.ci.services.Services");
     }
-  }
-
-  // Get the serialized saved properties from HotSpot
-  TempNewSymbol serializeSavedProperties = SymbolTable::new_symbol("serializeSavedProperties", CHECK_EXIT);
-  JavaValue result(T_OBJECT);
-  JavaCallArguments args;
-  JavaCalls::call_static(&result, ik, serializeSavedProperties, vmSymbols::serializePropertiesToByteArray_signature(), &args, THREAD);
-  if (HAS_PENDING_EXCEPTION) {
-    JVMCIRuntime::exit_on_pending_exception(NULL, "Error calling jdk.vm.ci.services.Services.serializeSavedProperties");
-  }
-  oop res = (oop) result.get_jobject();
-  assert(res->is_typeArray(), "must be");
-  assert(TypeArrayKlass::cast(res->klass())->element_type() == T_BYTE, "must be");
-  typeArrayOop ba = typeArrayOop(res);
-  int serialized_properties_len = ba->length();
-
-  // Copy serialized saved properties from HotSpot object into native buffer
-  jbyte* serialized_properties = NEW_RESOURCE_ARRAY(jbyte, serialized_properties_len);
-  memcpy(serialized_properties, ba->byte_at_addr(0), serialized_properties_len);
-
-  // Copy native buffer into shared library object
-  JVMCIPrimitiveArray buf = new_byteArray(serialized_properties_len, this);
-  if (has_pending_exception()) {
-    describe_pending_exception(true);
-    fatal("Error in copy_saved_properties");
-  }
-  copy_bytes_from(serialized_properties, buf, 0, serialized_properties_len);
-  if (has_pending_exception()) {
-    describe_pending_exception(true);
-    fatal("Error in copy_saved_properties");
-  }
-
-  // Initialize saved properties in shared library
-  jclass servicesClass = JNIJVMCI::Services::clazz();
-  jmethodID initializeSavedProperties = JNIJVMCI::Services::initializeSavedProperties_method();
-  JNIAccessMark jni(this);
-  jni()->CallStaticVoidMethod(servicesClass, initializeSavedProperties, buf.as_jobject());
-  if (jni()->ExceptionCheck()) {
-    jni()->ExceptionDescribe();
-    fatal("Error calling jdk.vm.ci.services.Services.initializeSavedProperties");
   }
 
   // Get the serialized saved properties from HotSpot
@@ -245,37 +206,6 @@ void JVMCIEnv::init_env_mode_runtime(JavaThread* thread, JNIEnv* parent_env) {
     _env = parent_env;
     return;
   }
-}
-
-JVMCIEnv::JVMCIEnv(JVMCICompileState* compile_state, const char* file, int line):
-    _throw_to_caller(false), _file(file), _line(line), _compile_state(compile_state) {
-  init_env_mode_runtime(NULL);
-}
-
-JVMCIEnv::JVMCIEnv(JavaThread* thread, const char* file, int line):
-    _throw_to_caller(false), _file(file), _line(line), _compile_state(NULL) {
-  init_env_mode_runtime(NULL);
-}
-
-JVMCIEnv::JVMCIEnv(JNIEnv* parent_env, const char* file, int line):
-    _throw_to_caller(true), _file(file), _line(line), _compile_state(NULL) {
-  init_env_mode_runtime(parent_env);
-  assert(_env == NULL || parent_env == _env, "mismatched JNIEnvironment");
-}
-
-void JVMCIEnv::init(bool is_hotspot, const char* file, int line) {
-  _compile_state = NULL;
-  _throw_to_caller = false;
-  _file = file;
-  _line = line;
-  if (is_hotspot) {
-    _env = NULL;
-    _is_hotspot = true;
-    _runtime = JVMCI::java_runtime();
-  } else {
-    init_env_mode_runtime(NULL);
-  }
-}
 
   // Running in JVMCI shared library mode so ensure the shared library
   // is loaded and initialized and get a shared library JNIEnv
@@ -305,13 +235,7 @@ void JVMCIEnv::init(bool is_hotspot, const char* file, int line) {
       }
       _detach_on_close = true;
     }
-  } else {
-    Thread* THREAD = Thread::current();
-    if (HAS_PENDING_EXCEPTION) {
-      JVMCIRuntime::describe_pending_hotspot_exception((JavaThread*) THREAD, clear);
-    }
   }
-}
 
   assert(_env != NULL, "missing env");
   assert(_throw_to_caller == false, "must be");
@@ -436,26 +360,6 @@ JVMCIEnv::~JVMCIEnv() {
     if (_detach_on_close) {
       get_shared_library_javavm()->DetachCurrentThread();
     }
-  }
-}
-
-jboolean JVMCIEnv::has_pending_exception() {
-  if (is_hotspot()) {
-    Thread* THREAD = Thread::current();
-    return HAS_PENDING_EXCEPTION;
-  } else {
-    JNIAccessMark jni(this);
-    return jni()->ExceptionCheck();
-  }
-}
-
-void JVMCIEnv::clear_pending_exception() {
-  if (is_hotspot()) {
-    Thread* THREAD = Thread::current();
-    CLEAR_PENDING_EXCEPTION;
-  } else {
-    JNIAccessMark jni(this);
-    jni()->ExceptionClear();
   }
 }
 
@@ -1515,15 +1419,6 @@ bool JVMCIEnv::equals(JVMCIObject a, JVMCIObject b) {
   }
 }
 
-bool JVMCIEnv::equals(JVMCIObject a, JVMCIObject b) {
-  if (is_hotspot()) {
-    return HotSpotJVMCI::resolve(a) == HotSpotJVMCI::resolve(b);
-  } else {
-    JNIAccessMark jni(this);
-    return jni()->IsSameObject(a.as_jobject(), b.as_jobject()) != 0;
-  }
-}
-
 BasicType JVMCIEnv::kindToBasicType(JVMCIObject kind, JVMCI_TRAPS) {
   if (kind.is_null()) {
     JVMCI_THROW_(NullPointerException, T_ILLEGAL);
@@ -1565,24 +1460,6 @@ void JVMCIEnv::initialize_installed_code(JVMCIObject installed_code, CodeBlob* c
     }
   } else {
     set_InstalledCode_entryPoint(installed_code, (jlong) cb->code_begin());
-  }
-  set_InstalledCode_address(installed_code, (jlong) cb);
-  set_HotSpotInstalledCode_size(installed_code, cb->size());
-  set_HotSpotInstalledCode_codeStart(installed_code, (jlong) cb->code_begin());
-  set_HotSpotInstalledCode_codeSize(installed_code, cb->code_size());
-}
-
-
-void JVMCIEnv::invalidate_nmethod_mirror(JVMCIObject mirror, JVMCI_TRAPS) {
-  if (mirror.is_null()) {
-    JVMCI_THROW(NullPointerException);
-  }
-
-  jlong nativeMethod = get_InstalledCode_address(mirror);
-  nmethod* nm = JVMCIENV->asNmethod(mirror);
-  if (nm == NULL) {
-    // Nothing to do
-    return;
   }
   set_InstalledCode_address(installed_code, (jlong) cb);
   set_HotSpotInstalledCode_size(installed_code, cb->size());
