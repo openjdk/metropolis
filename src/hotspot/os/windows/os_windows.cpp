@@ -201,7 +201,7 @@ void os::init_system_properties_values() {
     char *home_path;
     char *dll_path;
     char *pslash;
-    char *bin = "\\bin";
+    const char *bin = "\\bin";
     char home_dir[MAX_PATH + 1];
     char *alt_home_dir = ::getenv("_ALT_JAVA_HOME_DIR");
 
@@ -1367,12 +1367,18 @@ static int _print_module(const char* fname, address base_address,
 void * os::dll_load(const char *name, char *ebuf, int ebuflen) {
   void * result = LoadLibrary(name);
   if (result != NULL) {
+    Events::log(NULL, "Loaded shared library %s", name);
     // Recalculate pdb search path if a DLL was loaded successfully.
     SymbolEngine::recalc_search_path();
     return result;
   }
-
   DWORD errcode = GetLastError();
+  // Read system error message into ebuf
+  // It may or may not be overwritten below (in the for loop and just above)
+  lasterror(ebuf, (size_t) ebuflen);
+  ebuf[ebuflen - 1] = '\0';
+  Events::log(NULL, "Loading shared library %s failed, error code %lu", name, errcode);
+
   if (errcode == ERROR_MOD_NOT_FOUND) {
     strncpy(ebuf, "Can't find dependent libraries", ebuflen - 1);
     ebuf[ebuflen - 1] = '\0';
@@ -1384,11 +1390,6 @@ void * os::dll_load(const char *name, char *ebuf, int ebuflen) {
   // for an architecture other than Hotspot is running in
   // - then print to buffer "DLL was built for a different architecture"
   // else call os::lasterror to obtain system error message
-
-  // Read system error message into ebuf
-  // It may or may not be overwritten below (in the for loop and just above)
-  lasterror(ebuf, (size_t) ebuflen);
-  ebuf[ebuflen - 1] = '\0';
   int fd = ::open(name, O_RDONLY | O_BINARY, 0);
   if (fd < 0) {
     return NULL;
@@ -2185,7 +2186,7 @@ extern "C" void events();
 
 #define def_excpt(val) { #val, (val) }
 
-static const struct { char* name; uint number; } exceptlabels[] = {
+static const struct { const char* name; uint number; } exceptlabels[] = {
     def_excpt(EXCEPTION_ACCESS_VIOLATION),
     def_excpt(EXCEPTION_DATATYPE_MISALIGNMENT),
     def_excpt(EXCEPTION_BREAKPOINT),
@@ -4072,7 +4073,7 @@ void os::init(void) {
   init_page_sizes((size_t) win32::vm_page_size());
 
   // This may be overridden later when argument processing is done.
-  FLAG_SET_ERGO(bool, UseLargePagesIndividualAllocation, false);
+  FLAG_SET_ERGO(UseLargePagesIndividualAllocation, false);
 
   // Initialize main_process and main_thread
   main_process = GetCurrentProcess();  // Remember main_process is a pseudo handle
@@ -4910,6 +4911,9 @@ char* os::pd_map_memory(int fd, const char* file_name, size_t file_offset,
       return NULL;
     }
 
+    // Record virtual memory allocation
+    MemTracker::record_virtual_memory_reserve_and_commit((address)addr, bytes, CALLER_PC);
+
     DWORD bytes_read;
     OVERLAPPED overlapped;
     overlapped.Offset = (DWORD)file_offset;
@@ -5335,7 +5339,7 @@ int os::fork_and_exec(char* cmd, bool use_vfork_if_available) {
   DWORD exit_code;
 
   char * cmd_string;
-  char * cmd_prefix = "cmd /C ";
+  const char * cmd_prefix = "cmd /C ";
   size_t len = strlen(cmd) + strlen(cmd_prefix) + 1;
   cmd_string = NEW_C_HEAP_ARRAY_RETURN_NULL(char, len, mtInternal);
   if (cmd_string == NULL) {
@@ -5674,8 +5678,8 @@ void TestReserveMemorySpecial_test() {
 */
 int os::get_signal_number(const char* name) {
   static const struct {
-    char* name;
-    int   number;
+    const char* name;
+    int         number;
   } siglabels [] =
     // derived from version 6.0 VC98/include/signal.h
   {"ABRT",      SIGABRT,        // abnormal termination triggered by abort cl

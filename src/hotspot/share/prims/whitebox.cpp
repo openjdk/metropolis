@@ -30,6 +30,7 @@
 #include "classfile/modules.hpp"
 #include "classfile/protectionDomainCache.hpp"
 #include "classfile/stringTable.hpp"
+#include "classfile/symbolTable.hpp"
 #include "code/codeCache.hpp"
 #include "compiler/methodMatcher.hpp"
 #include "compiler/directivesParser.hpp"
@@ -37,6 +38,7 @@
 #include "gc/shared/genArguments.hpp"
 #include "gc/shared/genCollectedHeap.hpp"
 #include "jvmtifiles/jvmtiEnv.hpp"
+#include "memory/filemap.hpp"
 #include "memory/heapShared.inline.hpp"
 #include "memory/metaspaceShared.hpp"
 #include "memory/metadataFactory.hpp"
@@ -45,6 +47,7 @@
 #include "memory/universe.hpp"
 #include "memory/oopFactory.hpp"
 #include "oops/array.hpp"
+#include "oops/compressedOops.hpp"
 #include "oops/constantPool.inline.hpp"
 #include "oops/method.inline.hpp"
 #include "oops/objArrayKlass.hpp"
@@ -177,7 +180,7 @@ public:
 WB_ENTRY(jboolean, WB_IsClassAlive(JNIEnv* env, jobject target, jstring name))
   oop h_name = JNIHandles::resolve(name);
   if (h_name == NULL) return false;
-  Symbol* sym = java_lang_String::as_symbol(h_name, CHECK_false);
+  Symbol* sym = java_lang_String::as_symbol(h_name);
   TempNewSymbol tsym(sym); // Make sure to decrement reference count on sym on return
 
   WBIsKlassAliveClosure closure(sym);
@@ -189,7 +192,7 @@ WB_END
 WB_ENTRY(jint, WB_GetSymbolRefcount(JNIEnv* env, jobject unused, jstring name))
   oop h_name = JNIHandles::resolve(name);
   if (h_name == NULL) return false;
-  Symbol* sym = java_lang_String::as_symbol(h_name, CHECK_0);
+  Symbol* sym = java_lang_String::as_symbol(h_name);
   TempNewSymbol tsym(sym); // Make sure to decrement reference count on sym on return
   return (jint)sym->refcount();
 WB_END
@@ -259,17 +262,17 @@ WB_ENTRY(void, WB_ReadFromNoaccessArea(JNIEnv* env, jobject o))
 
   // Check if constraints are complied
   if (!( UseCompressedOops && rhs.base() != NULL &&
-         Universe::narrow_oop_base() != NULL &&
-         Universe::narrow_oop_use_implicit_null_checks() )) {
+         CompressedOops::base() != NULL &&
+         CompressedOops::use_implicit_null_checks() )) {
     tty->print_cr("WB_ReadFromNoaccessArea method is useless:\n "
                   "\tUseCompressedOops is %d\n"
                   "\trhs.base() is " PTR_FORMAT "\n"
-                  "\tUniverse::narrow_oop_base() is " PTR_FORMAT "\n"
-                  "\tUniverse::narrow_oop_use_implicit_null_checks() is %d",
+                  "\tCompressedOops::base() is " PTR_FORMAT "\n"
+                  "\tCompressedOops::use_implicit_null_checks() is %d",
                   UseCompressedOops,
                   p2i(rhs.base()),
-                  p2i(Universe::narrow_oop_base()),
-                  Universe::narrow_oop_use_implicit_null_checks());
+                  p2i(CompressedOops::base()),
+                  CompressedOops::use_implicit_null_checks());
     return;
   }
   tty->print_cr("Reading from no access area... ");
@@ -515,7 +518,7 @@ WB_ENTRY(jlong, WB_DramReservedEnd(JNIEnv* env, jobject o))
       uint end_region = HeterogeneousHeapRegionManager::manager()->end_index_of_dram();
       return (jlong)(g1h->base() + (end_region + 1) * HeapRegion::GrainBytes - 1);
     } else {
-      return (jlong)g1h->base() + G1Arguments::heap_reserved_size_bytes();
+      return (jlong)g1h->base() + G1Arguments::heap_max_size_bytes();
     }
   }
 #endif // INCLUDE_G1GC
@@ -919,9 +922,9 @@ WB_ENTRY(void, WB_MakeMethodNotCompilable(JNIEnv* env, jobject o, jobject method
   CHECK_JNI_EXCEPTION(env);
   methodHandle mh(THREAD, Method::checked_resolve_jmethod_id(jmid));
   if (is_osr) {
-    mh->set_not_osr_compilable(comp_level, true /* report */, "WhiteBox");
+    mh->set_not_osr_compilable("WhiteBox", comp_level);
   } else {
-    mh->set_not_compilable(comp_level, true /* report */, "WhiteBox");
+    mh->set_not_compilable("WhiteBox", comp_level);
   }
 WB_END
 
@@ -1881,6 +1884,10 @@ WB_ENTRY(jboolean, WB_IsSharingEnabled(JNIEnv* env, jobject wb))
   return UseSharedSpaces;
 WB_END
 
+WB_ENTRY(jboolean, WB_CDSMemoryMappingFailed(JNIEnv* env, jobject wb))
+  return FileMapInfo::memory_mapping_failed();
+WB_END
+
 WB_ENTRY(jboolean, WB_IsShared(JNIEnv* env, jobject wb, jobject obj))
   oop obj_oop = JNIHandles::resolve(obj);
   return HeapShared::is_archived_object(obj_oop);
@@ -1904,6 +1911,15 @@ WB_ENTRY(jobject, WB_GetResolvedReferences(JNIEnv* env, jobject wb, jclass clazz
   } else {
     return NULL;
   }
+WB_END
+
+WB_ENTRY(void, WB_LinkClass(JNIEnv* env, jobject wb, jclass clazz))
+  Klass *k = java_lang_Class::as_Klass(JNIHandles::resolve_non_null(clazz));
+  if (!k->is_instance_klass()) {
+    return;
+  }
+  InstanceKlass *ik = InstanceKlass::cast(k);
+  ik->link_class(THREAD); // may throw verification error
 WB_END
 
 WB_ENTRY(jboolean, WB_AreOpenArchiveHeapObjectsMapped(JNIEnv* env))
@@ -1994,8 +2010,7 @@ int WhiteBox::offset_for_field(const char* field_name, oop object,
   InstanceKlass* ik = InstanceKlass::cast(arg_klass);
 
   //Create symbols to look for in the class
-  TempNewSymbol name_symbol = SymbolTable::lookup(field_name, (int) strlen(field_name),
-      THREAD);
+  TempNewSymbol name_symbol = SymbolTable::new_symbol(field_name);
 
   //To be filled in with an offset of the field we're looking for
   fieldDescriptor fd;
@@ -2341,10 +2356,12 @@ static JNINativeMethod methods[] = {
   {CC"isSharedClass",      CC"(Ljava/lang/Class;)Z",  (void*)&WB_IsSharedClass },
   {CC"areSharedStringsIgnored",           CC"()Z",    (void*)&WB_AreSharedStringsIgnored },
   {CC"getResolvedReferences", CC"(Ljava/lang/Class;)Ljava/lang/Object;", (void*)&WB_GetResolvedReferences},
+  {CC"linkClass",          CC"(Ljava/lang/Class;)V",  (void*)&WB_LinkClass},
   {CC"areOpenArchiveHeapObjectsMapped",   CC"()Z",    (void*)&WB_AreOpenArchiveHeapObjectsMapped},
   {CC"isCDSIncludedInVmBuild",            CC"()Z",    (void*)&WB_IsCDSIncludedInVmBuild },
   {CC"isJFRIncludedInVmBuild",            CC"()Z",    (void*)&WB_IsJFRIncludedInVmBuild },
-  {CC"isJavaHeapArchiveSupported",      CC"()Z",      (void*)&WB_IsJavaHeapArchiveSupported },
+  {CC"isJavaHeapArchiveSupported",        CC"()Z",    (void*)&WB_IsJavaHeapArchiveSupported },
+  {CC"cdsMemoryMappingFailed",            CC"()Z",    (void*)&WB_CDSMemoryMappingFailed },
 
   {CC"clearInlineCaches0",  CC"(Z)V",                 (void*)&WB_ClearInlineCaches },
   {CC"handshakeWalkStack", CC"(Ljava/lang/Thread;Z)I", (void*)&WB_HandshakeWalkStack },

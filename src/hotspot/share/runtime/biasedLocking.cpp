@@ -548,7 +548,7 @@ public:
       if (biased_locker != NULL) {
         _biased_locker_id = JFR_THREAD_ID(biased_locker);
       }
-      _safepoint_id = SafepointSynchronize::safepoint_counter();
+      _safepoint_id = SafepointSynchronize::safepoint_id();
       clean_up_cached_monitor_info();
       return;
     } else {
@@ -589,7 +589,7 @@ public:
 
   virtual void doit() {
     _status_code = bulk_revoke_or_rebias_at_safepoint((*_obj)(), _bulk_rebias, _attempt_rebias_of_object, _requesting_thread);
-    _safepoint_id = SafepointSynchronize::safepoint_counter();
+    _safepoint_id = SafepointSynchronize::safepoint_id();
     clean_up_cached_monitor_info();
   }
 
@@ -865,7 +865,7 @@ int* BiasedLocking::slow_path_entry_count_addr()               { return _counter
 
 // BiasedLockingCounters
 
-int BiasedLockingCounters::slow_path_entry_count() {
+int BiasedLockingCounters::slow_path_entry_count() const {
   if (_slow_path_entry_count != 0) {
     return _slow_path_entry_count;
   }
@@ -876,7 +876,7 @@ int BiasedLockingCounters::slow_path_entry_count() {
   return _total_entry_count - sum;
 }
 
-void BiasedLockingCounters::print_on(outputStream* st) {
+void BiasedLockingCounters::print_on(outputStream* st) const {
   tty->print_cr("# total entries: %d", _total_entry_count);
   tty->print_cr("# biased lock entries: %d", _biased_lock_entry_count);
   tty->print_cr("# anonymously biased lock entries: %d", _anonymously_biased_lock_entry_count);
@@ -885,3 +885,5 @@ void BiasedLockingCounters::print_on(outputStream* st) {
   tty->print_cr("# fast path lock entries: %d", _fast_path_entry_count);
   tty->print_cr("# slow path lock entries: %d", slow_path_entry_count());
 }
+
+void BiasedLockingCounters::print() const { print_on(tty); }

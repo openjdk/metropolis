@@ -24,9 +24,12 @@
 
 #include "precompiled.hpp"
 #include "classfile/stringTable.hpp"
+#include "classfile/symbolTable.hpp"
 #include "code/codeCache.hpp"
 #include "memory/oopFactory.hpp"
 #include "memory/resourceArea.hpp"
+#include "memory/universe.hpp"
+#include "oops/objArrayKlass.hpp"
 #include "oops/typeArrayOop.inline.hpp"
 #include "runtime/jniHandles.inline.hpp"
 #include "runtime/javaCalls.hpp"
@@ -89,7 +92,7 @@ void JVMCIEnv::copy_saved_properties() {
   }
 
   // Get the serialized saved properties from HotSpot
-  TempNewSymbol serializeSavedProperties = SymbolTable::new_symbol("serializeSavedProperties", CHECK_EXIT);
+  TempNewSymbol serializeSavedProperties = SymbolTable::new_symbol("serializeSavedProperties");
   JavaValue result(T_OBJECT);
   JavaCallArguments args;
   JavaCalls::call_static(&result, ik, serializeSavedProperties, vmSymbols::serializePropertiesToByteArray_signature(), &args, THREAD);
@@ -1107,13 +1110,6 @@ JVMCIObject JVMCIEnv::get_jvmci_type(const JVMCIKlassHandle& klass, JVMCI_TRAPS)
   if (klass.is_null()) {
     return type;
   }
-#ifdef INCLUDE_ALL_GCS
-    if (UseG1GC) {
-      // The klass might have come from a weak location so enqueue
-      // the Class to make sure it's noticed by G1
-      G1SATBCardTableModRefBS::enqueue(klass()->java_mirror());
-    }
-#endif  // Klass* don't require tracking as Metadata*
 
   jlong pointer = (jlong) klass();
   JavaThread* THREAD = JavaThread::current();

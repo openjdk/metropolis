@@ -211,20 +211,13 @@ final class CompilerToVM {
     native HotSpotResolvedJavaType lookupClass(Class<?> javaClass);
 
     /**
-     * Resolves the entry at index {@code cpi} in {@code constantPool} to an object.
-     *
-     * The behavior of this method is undefined if {@code cpi} does not denote one of the following
-     * entry types: {@code JVM_CONSTANT_MethodHandle}, {@code JVM_CONSTANT_MethodHandleInError},
-     * {@code JVM_CONSTANT_MethodType} and {@code JVM_CONSTANT_MethodTypeInError}.
-     */
-    native HotSpotObjectConstantImpl resolveConstantInPool(HotSpotConstantPool constantPool, int cpi);
-
-    /**
      * Resolves the entry at index {@code cpi} in {@code constantPool} to an object, looking in the
      * constant pool cache first.
      *
-     * The behavior of this method is undefined if {@code cpi} does not denote a
-     * {@code JVM_CONSTANT_String} entry.
+     * The behavior of this method is undefined if {@code cpi} does not denote one of the following
+     * entry types: {@code JVM_CONSTANT_String}, {@code JVM_CONSTANT_MethodHandle},
+     * {@code JVM_CONSTANT_MethodHandleInError}, {@code JVM_CONSTANT_MethodType} and
+     * {@code JVM_CONSTANT_MethodTypeInError}.
      */
     native HotSpotObjectConstantImpl resolvePossiblyCachedConstantInPool(HotSpotConstantPool constantPool, int cpi);
 
@@ -558,6 +551,18 @@ final class CompilerToVM {
      * Collects the current values of all JVMCI benchmark counters, summed up over all threads.
      */
     native long[] collectCounters();
+
+    /**
+     * Get the current number of counters allocated for use by JVMCI. Should be the same value as
+     * the flag {@code JVMCICounterSize}.
+     */
+    native int getCountersSize();
+
+    /**
+     * Attempt to change the size of the counters allocated for JVMCI. This requires a safepoint to
+     * safely reallocate the storage but it's advisable to increase the size in reasonable chunks.
+     */
+    native boolean setCountersSize(int newSize);
 
     /**
      * Determines if {@code metaspaceMethodData} is mature.

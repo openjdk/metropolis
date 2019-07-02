@@ -24,6 +24,7 @@
 
 #include "precompiled.hpp"
 #include "jvm.h"
+#include "aot/aotLoader.hpp"
 #include "classfile/classLoader.hpp"
 #include "classfile/javaClasses.hpp"
 #include "classfile/moduleEntry.hpp"
@@ -953,6 +954,8 @@ void Thread::print_on(outputStream* st, bool print_extended_info) const {
   debug_only(if (WizardMode) print_owned_locks_on(st);)
 }
 
+void Thread::print() const { print_on(tty); }
+
 // Thread::print_on_error() is called by fatal error handler. Don't use
 // any lock or allocate memory.
 void Thread::print_on_error(outputStream* st, char* buf, int buflen) const {
@@ -1589,6 +1592,78 @@ void JavaThread::collect_counters(jlong* array, int length) {
   }
 }
 
+// Attempt to enlarge the array for per thread counters.
+jlong* resize_counters_array(jlong* old_counters, int current_size, int new_size) {
+  jlong* new_counters = NEW_C_HEAP_ARRAY(jlong, new_size, mtJVMCI);
+  if (new_counters == NULL) {
+    return NULL;
+  }
+  if (old_counters == NULL) {
+    old_counters = new_counters;
+    memset(old_counters, 0, sizeof(jlong) * new_size);
+  } else {
+    for (int i = 0; i < MIN2((int) current_size, new_size); i++) {
+      new_counters[i] = old_counters[i];
+    }
+    if (new_size > current_size) {
+      memset(new_counters + current_size, 0, sizeof(jlong) * (new_size - current_size));
+    }
+    FREE_C_HEAP_ARRAY(jlong, old_counters);
+  }
+  return new_counters;
+}
+
+// Attempt to enlarge the array for per thread counters.
+bool JavaThread::resize_counters(int current_size, int new_size) {
+  jlong* new_counters = resize_counters_array(_jvmci_counters, current_size, new_size);
+  if (new_counters == NULL) {
+    return false;
+  } else {
+    _jvmci_counters = new_counters;
+    return true;
+  }
+}
+
+class VM_JVMCIResizeCounters : public VM_Operation {
+ private:
+  int _new_size;
+  bool _failed;
+
+ public:
+  VM_JVMCIResizeCounters(int new_size) : _new_size(new_size), _failed(false) { }
+  VMOp_Type type()                  const        { return VMOp_JVMCIResizeCounters; }
+  bool allow_nested_vm_operations() const        { return true; }
+  void doit() {
+    // Resize the old thread counters array
+    jlong* new_counters = resize_counters_array(JavaThread::_jvmci_old_thread_counters, JVMCICounterSize, _new_size);
+    if (new_counters == NULL) {
+      _failed = true;
+      return;
+    } else {
+      JavaThread::_jvmci_old_thread_counters = new_counters;
+    }
+
+    // Now resize each threads array
+    for (JavaThreadIteratorWithHandle jtiwh; JavaThread *tp = jtiwh.next(); ) {
+      if (!tp->resize_counters(JVMCICounterSize, _new_size)) {
+        _failed = true;
+        break;
+      }
+    }
+    if (!_failed) {
+      JVMCICounterSize = _new_size;
+    }
+  }
+
+  bool failed() { return _failed; }
+};
+
+bool JavaThread::resize_all_jvmci_counters(int new_size) {
+  VM_JVMCIResizeCounters op(new_size);
+  VMThread::execute(&op);
+  return !op.failed();
+}
+
 #endif // INCLUDE_JVMCI
 
 // A JavaThread is a normal Java thread
@@ -1611,7 +1686,6 @@ void JavaThread::initialize() {
   set_deopt_compiled_method(NULL);
   clear_must_deopt_id();
   set_monitor_chunks(NULL);
-  set_next(NULL);
   _on_thread_list = false;
   set_thread_state(_thread_new);
   _terminated = _not_terminated;
@@ -1628,11 +1702,9 @@ void JavaThread::initialize() {
   _in_retryable_allocation = false;
   _jvmci._alternate_call_target = NULL;
   assert(_jvmci._implicit_exception_pc == NULL, "must be");
+  _jvmci_counters = NULL;
   if (JVMCICounterSize > 0) {
-    _jvmci_counters = NEW_C_HEAP_ARRAY(jlong, JVMCICounterSize, mtInternal);
-    memset(_jvmci_counters, 0, sizeof(jlong) * JVMCICounterSize);
-  } else {
-    _jvmci_counters = NULL;
+    resize_counters(0, (int) JVMCICounterSize);
   }
 #endif // INCLUDE_JVMCI
   _reserved_stack_activation = NULL;  // stack base not known yet
@@ -3026,6 +3098,8 @@ void JavaThread::print_on(outputStream *st, bool print_extended_info) const {
   }
 }
 
+void JavaThread::print() const { print_on(tty); }
+
 void JavaThread::print_name_on_error(outputStream* st, char *buf, int buflen) const {
   st->print("%s", get_thread_name_string(buf, buflen));
 }
@@ -3190,8 +3264,7 @@ void JavaThread::prepare(jobject jni_thread, ThreadPriority prio) {
 oop JavaThread::current_park_blocker() {
   // Support for JSR-166 locks
   oop thread_oop = threadObj();
-  if (thread_oop != NULL &&
-      JDK_Version::current().supports_thread_park_blocker()) {
+  if (thread_oop != NULL) {
     return java_lang_Thread::park_blocker(thread_oop);
   }
   return NULL;
@@ -3454,7 +3527,6 @@ void CodeCacheSweeperThread::nmethods_do(CodeBlobClosure* cf) {
 // would like. We are actively migrating Threads_lock uses to other
 // mechanisms in order to reduce Threads_lock contention.
 
-JavaThread* Threads::_thread_list = NULL;
 int         Threads::_number_of_threads = 0;
 int         Threads::_number_of_non_daemon_threads = 0;
 int         Threads::_return_code = 0;
@@ -3650,6 +3722,9 @@ void Threads::initialize_java_lang_classes(JavaThread* main_thread, TRAPS) {
   initialize_class(vmSymbols::java_lang_StackOverflowError(), CHECK);
   initialize_class(vmSymbols::java_lang_IllegalMonitorStateException(), CHECK);
   initialize_class(vmSymbols::java_lang_IllegalArgumentException(), CHECK);
+
+  // Eager box cache initialization only if AOT is on and any library is loaded.
+  AOTLoader::initialize_box_caches(CHECK);
 }
 
 void Threads::initialize_jsr292_core_classes(TRAPS) {
@@ -3761,7 +3836,6 @@ jint Threads::create_vm(JavaVMInitArgs* args, bool* canTryAgain) {
   }
 
   // Initialize Threads state
-  _thread_list = NULL;
   _number_of_threads = 0;
   _number_of_non_daemon_threads = 0;
 
@@ -3770,7 +3844,7 @@ jint Threads::create_vm(JavaVMInitArgs* args, bool* canTryAgain) {
 
 #if INCLUDE_JVMCI
   if (JVMCICounterSize > 0) {
-    JavaThread::_jvmci_old_thread_counters = NEW_C_HEAP_ARRAY(jlong, JVMCICounterSize, mtInternal);
+    JavaThread::_jvmci_old_thread_counters = NEW_C_HEAP_ARRAY(jlong, JVMCICounterSize, mtJVMCI);
     memset(JavaThread::_jvmci_old_thread_counters, 0, sizeof(jlong) * JVMCICounterSize);
   } else {
     JavaThread::_jvmci_old_thread_counters = NULL;
@@ -3913,6 +3987,7 @@ jint Threads::create_vm(JavaVMInitArgs* args, bool* canTryAgain) {
     Chunk::start_chunk_pool_cleaner_task();
   }
 
+
   // initialize compiler(s)
 #if defined(COMPILER1) || COMPILER2_OR_JVMCI
 #if INCLUDE_JVMCI
@@ -3961,10 +4036,8 @@ jint Threads::create_vm(JavaVMInitArgs* args, bool* canTryAgain) {
   SystemDictionary::compute_java_loaders(CHECK_JNI_ERR);
 
 #if INCLUDE_CDS
-  if (DumpSharedSpaces) {
-    // capture the module path info from the ModuleEntryTable
-    ClassLoader::initialize_module_path(THREAD);
-  }
+  // capture the module path info from the ModuleEntryTable
+  ClassLoader::initialize_module_path(THREAD);
 #endif
 
 #if INCLUDE_JVMCI
@@ -4007,13 +4080,11 @@ jint Threads::create_vm(JavaVMInitArgs* args, bool* canTryAgain) {
   RTMLockingCounters::init();
 #endif
 
-  if (JDK_Version::current().post_vm_init_hook_enabled()) {
-    call_postVMInitHook(THREAD);
-    // The Java side of PostVMInitHook.run must deal with all
-    // exceptions and provide means of diagnosis.
-    if (HAS_PENDING_EXCEPTION) {
-      CLEAR_PENDING_EXCEPTION;
-    }
+  call_postVMInitHook(THREAD);
+  // The Java side of PostVMInitHook.run must deal with all
+  // exceptions and provide means of diagnosis.
+  if (HAS_PENDING_EXCEPTION) {
+    CLEAR_PENDING_EXCEPTION;
   }
 
   {
@@ -4168,7 +4239,7 @@ void Threads::create_vm_init_agents() {
   for (agent = Arguments::agents(); agent != NULL; agent = agent->next()) {
     // CDS dumping does not support native JVMTI agent.
     // CDS dumping supports Java agent if the AllowArchivingWithJavaAgent diagnostic option is specified.
-    if (DumpSharedSpaces) {
+    if (DumpSharedSpaces || DynamicDumpSharedSpaces) {
       if(!agent->is_instrument_lib()) {
         vm_exit_during_cds_dumping("CDS dumping does not support native JVMTI agent, name", agent->name());
       } else if (!AllowArchivingWithJavaAgent) {
@@ -4424,9 +4495,6 @@ void Threads::add(JavaThread* p, bool force_daemon) {
 
   BarrierSet::barrier_set()->on_thread_attach(p);
 
-  p->set_next(_thread_list);
-  _thread_list = p;
-
   // Once a JavaThread is added to the Threads list, smr_delete() has
   // to be used to delete it. Otherwise we can just delete it directly.
   p->set_on_thread_list();
@@ -4463,20 +4531,6 @@ void Threads::remove(JavaThread* p, bool is_daemon) {
 
     // Maintain fast thread list
     ThreadsSMRSupport::remove_thread(p);
-
-    JavaThread* current = _thread_list;
-    JavaThread* prev    = NULL;
-
-    while (current != p) {
-      prev    = current;
-      current = current->next();
-    }
-
-    if (prev) {
-      prev->set_next(current->next());
-    } else {
-      _thread_list = p->next();
-    }
 
     _number_of_threads--;
     if (!is_daemon) {

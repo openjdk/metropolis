@@ -27,6 +27,8 @@
 #include "jvmci/jvmciCodeInstaller.hpp"
 #include "jvmci/jvmciCompilerToVM.hpp"
 #include "jvmci/jvmciRuntime.hpp"
+#include "memory/universe.hpp"
+#include "oops/compressedOops.inline.hpp"
 #include "runtime/interfaceSupport.inline.hpp"
 #include "runtime/jniHandles.inline.hpp"
 #include "runtime/sharedRuntime.hpp"
@@ -268,7 +270,7 @@ narrowKlass CodeInstaller::record_narrow_metadata_reference(CodeSection* section
   int index = _oop_recorder->find_index(klass);
   section->relocate(dest, metadata_Relocation::spec(index));
   TRACE_jvmci_3("narrowKlass[%d of %d] = %s", index, _oop_recorder->metadata_count(), klass->name()->as_C_string());
-  return Klass::encode_klass(klass);
+  return CompressedKlassPointers::encode(klass);
 }
 #endif
 
@@ -560,6 +562,7 @@ JVMCI::CodeInstallResult CodeInstaller::gather_metadata(JVMCIObject target, JVMC
   metadata.set_pc_desc(_debug_recorder->pcs(), _debug_recorder->pcs_length());
   metadata.set_scopes(_debug_recorder->stream()->buffer(), _debug_recorder->data_size());
   metadata.set_exception_table(&_exception_handler_table);
+  metadata.set_implicit_exception_table(&_implicit_exception_table);
 
   RelocBuffer* reloc_buffer = metadata.get_reloc_buffer();
 
@@ -635,7 +638,7 @@ JVMCI::CodeInstallResult CodeInstaller::install(JVMCICompiler* compiler,
     JVMCIObject mirror = installed_code;
     nmethod* nm = NULL;
     result = runtime()->register_method(jvmci_env(), method, nm, entry_bci, &_offsets, _orig_pc_offset, &buffer,
-                                        stack_slots, _debug_recorder->_oopmaps, &_exception_handler_table,
+                                        stack_slots, _debug_recorder->_oopmaps, &_exception_handler_table, &_implicit_exception_table,
                                         compiler, _debug_recorder, _dependencies, id,
                                         has_unsafe_access, _has_wide_vector, compiled_code, mirror,
                                         failed_speculations, speculations, speculations_len);
@@ -868,6 +871,10 @@ JVMCI::CodeInstallResult CodeInstaller::initialize_buffer(CodeBuffer& buffer, bo
         if (_orig_pc_offset < 0) {
           JVMCI_ERROR_OK("method contains safepoint, but has no deopt rescue slot");
         }
+        if (JVMCIENV->equals(reason, jvmci_env()->get_site_InfopointReason_IMPLICIT_EXCEPTION())) {
+          TRACE_jvmci_4("implicit exception at %i", pc_offset);
+          _implicit_exception_table.add_deoptimize(pc_offset);
+        }
       } else {
         TRACE_jvmci_4("infopoint at %i", pc_offset);
         site_Infopoint(buffer, pc_offset, site, JVMCI_CHECK_OK);
@@ -986,9 +993,11 @@ GrowableArray<ScopeValue*>* CodeInstaller::record_virtual_objects(JVMCIObject de
     JVMCIObject value = JVMCIENV->get_object_at(virtualObjects, i);
     int id = jvmci_env()->get_VirtualObject_id(value);
     JVMCIObject type = jvmci_env()->get_VirtualObject_type(value);
+    bool is_auto_box = jvmci_env()->get_VirtualObject_isAutoBox(value);
     Klass* klass = jvmci_env()->asKlass(type);
     oop javaMirror = klass->java_mirror();
-    ObjectValue* sv = new ObjectValue(id, new ConstantOopWriteValue(JNIHandles::make_local(Thread::current(), javaMirror)));
+    ScopeValue *klass_sv = new ConstantOopWriteValue(JNIHandles::make_local(Thread::current(), javaMirror));
+    ObjectValue* sv = is_auto_box ? new AutoBoxObjectValue(id, klass_sv) : new ObjectValue(id, klass_sv);
     if (id < 0 || id >= objects->length()) {
       JVMCI_ERROR_NULL("virtual object id %d out of bounds", id);
     }

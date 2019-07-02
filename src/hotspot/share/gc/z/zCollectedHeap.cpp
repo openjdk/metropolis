@@ -31,6 +31,7 @@
 #include "gc/z/zServiceability.hpp"
 #include "gc/z/zStat.hpp"
 #include "gc/z/zUtils.inline.hpp"
+#include "memory/universe.hpp"
 #include "runtime/mutexLocker.hpp"
 
 ZCollectedHeap* ZCollectedHeap::heap() {
@@ -47,6 +48,7 @@ ZCollectedHeap::ZCollectedHeap() :
     _heap(),
     _director(new ZDirector()),
     _driver(new ZDriver()),
+    _uncommitter(new ZUncommitter()),
     _stat(new ZStat()),
     _runtime_workers() {}
 
@@ -76,6 +78,7 @@ void ZCollectedHeap::initialize_serviceability() {
 void ZCollectedHeap::stop() {
   _director->stop();
   _driver->stop();
+  _uncommitter->stop();
   _stat->stop();
 }
 
@@ -106,7 +109,7 @@ bool ZCollectedHeap::is_maximal_no_gc() const {
 }
 
 bool ZCollectedHeap::is_in(const void* p) const {
-  return is_in_reserved(p) && _heap.is_in((uintptr_t)p);
+  return _heap.is_in((uintptr_t)p);
 }
 
 uint32_t ZCollectedHeap::hash_oop(oop obj) const {
@@ -271,6 +274,7 @@ jlong ZCollectedHeap::millis_since_last_gc() {
 void ZCollectedHeap::gc_threads_do(ThreadClosure* tc) const {
   tc->do_thread(_director);
   tc->do_thread(_driver);
+  tc->do_thread(_uncommitter);
   tc->do_thread(_stat);
   _heap.worker_threads_do(tc);
   _runtime_workers.threads_do(tc);
@@ -329,6 +333,8 @@ void ZCollectedHeap::print_gc_threads_on(outputStream* st) const {
   _director->print_on(st);
   st->cr();
   _driver->print_on(st);
+  st->cr();
+  _uncommitter->print_on(st);
   st->cr();
   _stat->print_on(st);
   st->cr();
