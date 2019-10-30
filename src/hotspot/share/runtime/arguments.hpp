@@ -322,9 +322,6 @@ class Arguments : AllStatic {
   // java launcher
   static const char* _sun_java_launcher;
 
-  // sun.java.launcher.pid, private property
-  static int    _sun_java_launcher_pid;
-
   // was this VM created via the -XXaltjvm=<path> option
   static bool   _sun_java_launcher_is_altjvm;
 
@@ -430,7 +427,8 @@ class Arguments : AllStatic {
 
   static void handle_extra_cms_flags(const char* msg);
 
-  static jint parse_vm_init_args(const JavaVMInitArgs *java_tool_options_args,
+  static jint parse_vm_init_args(const JavaVMInitArgs *vm_options_args,
+                                 const JavaVMInitArgs *java_tool_options_args,
                                  const JavaVMInitArgs *java_options_args,
                                  const JavaVMInitArgs *cmd_line_args);
   static jint parse_each_vm_init_arg(const JavaVMInitArgs* args, bool* patch_mod_javabase, JVMFlag::Flags origin);
@@ -548,8 +546,6 @@ class Arguments : AllStatic {
   static bool created_by_java_launcher();
   // -Dsun.java.launcher.is_altjvm
   static bool sun_java_launcher_is_altjvm();
-  // -Dsun.java.launcher.pid
-  static int sun_java_launcher_pid()        { return _sun_java_launcher_pid; }
 
   // -Xrun
   static AgentLibrary* libraries()          { return _libraryList.first(); }
@@ -652,6 +648,12 @@ class Arguments : AllStatic {
   static bool atojulong(const char *s, julong* result);
 
   static bool has_jfr_option() NOT_JFR_RETURN_(false);
+
+  static bool is_dumping_archive() { return DumpSharedSpaces || DynamicDumpSharedSpaces; }
+
+  static void assert_is_dumping_archive() {
+    assert(Arguments::is_dumping_archive(), "dump time only");
+  }
 };
 
 // Disable options not supported in this release, with a warning if they

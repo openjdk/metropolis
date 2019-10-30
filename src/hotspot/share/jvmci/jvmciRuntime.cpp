@@ -385,8 +385,8 @@ JRT_ENTRY_NO_ASYNC(void, JVMCIRuntime::monitorenter(JavaThread* thread, oopDesc*
   IF_TRACE_jvmci_3 {
     char type[O_BUFLEN];
     obj->klass()->name()->as_C_string(type, O_BUFLEN);
-    markOop mark = obj->mark();
-    TRACE_jvmci_3("%s: entered locking slow case with obj=" INTPTR_FORMAT ", type=%s, mark=" INTPTR_FORMAT ", lock=" INTPTR_FORMAT, thread->name(), p2i(obj), type, p2i(mark), p2i(lock));
+    markWord mark = obj->mark();
+    TRACE_jvmci_3("%s: entered locking slow case with obj=" INTPTR_FORMAT ", type=%s, mark=" INTPTR_FORMAT ", lock=" INTPTR_FORMAT, thread->name(), p2i(obj), type, mark.value(), p2i(lock));
     tty->flush();
   }
   if (PrintBiasedLockingStatistics) {
@@ -394,17 +394,7 @@ JRT_ENTRY_NO_ASYNC(void, JVMCIRuntime::monitorenter(JavaThread* thread, oopDesc*
   }
   Handle h_obj(thread, obj);
   assert(oopDesc::is_oop(h_obj()), "must be NULL or an object");
-  if (UseBiasedLocking) {
-    // Retry fast entry if bias is revoked to avoid unnecessary inflation
-    ObjectSynchronizer::fast_enter(h_obj, lock, true, CHECK);
-  } else {
-    if (JVMCIUseFastLocking) {
-      // When using fast locking, the compiled code has already tried the fast case
-      ObjectSynchronizer::slow_enter(h_obj, lock, THREAD);
-    } else {
-      ObjectSynchronizer::fast_enter(h_obj, lock, false, THREAD);
-    }
-  }
+  ObjectSynchronizer::enter(h_obj, lock, THREAD);
   TRACE_jvmci_3("%s: exiting locking slow with obj=" INTPTR_FORMAT, thread->name(), p2i(obj));
 JRT_END
 
@@ -426,16 +416,11 @@ JRT_LEAF(void, JVMCIRuntime::monitorexit(JavaThread* thread, oopDesc* obj, Basic
   }
 #endif
 
-  if (JVMCIUseFastLocking) {
-    // When using fast locking, the compiled code has already tried the fast case
-    ObjectSynchronizer::slow_exit(obj, lock, THREAD);
-  } else {
-    ObjectSynchronizer::fast_exit(obj, lock, THREAD);
-  }
+  ObjectSynchronizer::exit(obj, lock, THREAD);
   IF_TRACE_jvmci_3 {
     char type[O_BUFLEN];
     obj->klass()->name()->as_C_string(type, O_BUFLEN);
-    TRACE_jvmci_3("%s: exited locking slow case with obj=" INTPTR_FORMAT ", type=%s, mark=" INTPTR_FORMAT ", lock=" INTPTR_FORMAT, thread->name(), p2i(obj), type, p2i(obj->mark()), p2i(lock));
+    TRACE_jvmci_3("%s: exited locking slow case with obj=" INTPTR_FORMAT ", type=%s, mark=" INTPTR_FORMAT ", lock=" INTPTR_FORMAT, thread->name(), p2i(obj), type, obj->mark().value(), p2i(lock));
     tty->flush();
   }
 JRT_END
@@ -646,7 +631,7 @@ JRT_ENTRY(jboolean, JVMCIRuntime::thread_is_interrupted(JavaThread* thread, oopD
     // The other thread may exit during this process, which is ok so return false.
     return JNI_FALSE;
   } else {
-    return (jint) Thread::is_interrupted(receiverThread, clear_interrupted != 0);
+    return (jint) receiverThread->is_interrupted(clear_interrupted != 0);
   }
 JRT_END
 
@@ -873,17 +858,6 @@ JVMCIObject JVMCIRuntime::get_HotSpotJVMCIRuntime(JVMCI_TRAPS) {
 
 // private void CompilerToVM.registerNatives()
 JVM_ENTRY_NO_ENV(void, JVM_RegisterJVMCINatives(JNIEnv *env, jclass c2vmClass))
-
-#ifdef _LP64
-#ifndef TARGET_ARCH_sparc
-  uintptr_t heap_end = (uintptr_t) Universe::heap()->reserved_region().end();
-  uintptr_t allocation_end = heap_end + ((uintptr_t)16) * 1024 * 1024 * 1024;
-  guarantee(heap_end < allocation_end, "heap end too close to end of address space (might lead to erroneous TLAB allocations)");
-#endif // TARGET_ARCH_sparc
-#else
-  fatal("check TLAB allocation code for address space conflicts");
-#endif
-
   JNI_JVMCIENV(thread, env);
 
   if (!EnableJVMCI) {
@@ -967,10 +941,8 @@ void JVMCIRuntime::exit_on_pending_exception(JVMCIEnv* JVMCIENV, const char* mes
       describe_pending_hotspot_exception(THREAD, true);
     }
   } else {
-    // Allow error reporting thread to print the stack trace.  Windows
-    // doesn't allow uninterruptible wait for JavaThreads
-    const bool interruptible = true;
-    os::sleep(THREAD, 200, interruptible);
+    // Allow error reporting thread to print the stack trace.
+    THREAD->sleep(200);
   }
 
   before_exit(THREAD);
@@ -1008,8 +980,8 @@ Klass* JVMCIRuntime::get_klass_by_name_impl(Klass*& accessing_klass,
   JVMCI_EXCEPTION_CONTEXT;
 
   // Now we need to check the SystemDictionary
-  if (sym->char_at(0) == 'L' &&
-    sym->char_at(sym->utf8_length()-1) == ';') {
+  if (sym->char_at(0) == JVM_SIGNATURE_CLASS &&
+      sym->char_at(sym->utf8_length()-1) == JVM_SIGNATURE_ENDCLASS) {
     // This is a name from a signature.  Strip off the trimmings.
     // Call recursive to keep scope of strippedsym.
     TempNewSymbol strippedsym = SymbolTable::new_symbol(sym->as_utf8()+1,
@@ -1041,8 +1013,8 @@ Klass* JVMCIRuntime::get_klass_by_name_impl(Klass*& accessing_klass,
   // we must build an array type around it.  The CI requires array klasses
   // to be loaded if their element klasses are loaded, except when memory
   // is exhausted.
-  if (sym->char_at(0) == '[' &&
-      (sym->char_at(1) == '[' || sym->char_at(1) == 'L')) {
+  if (sym->char_at(0) == JVM_SIGNATURE_ARRAY &&
+      (sym->char_at(1) == JVM_SIGNATURE_ARRAY || sym->char_at(1) == JVM_SIGNATURE_CLASS)) {
     // We have an unloaded array.
     // Build it on the fly if the element class exists.
     TempNewSymbol elem_sym = SymbolTable::new_symbol(sym->as_utf8()+1,
@@ -1299,7 +1271,7 @@ InstanceKlass* JVMCIRuntime::get_instance_klass_for_declared_method_holder(Klass
   if (method_holder->is_instance_klass()) {
     return InstanceKlass::cast(method_holder);
   } else if (method_holder->is_array_klass()) {
-    return InstanceKlass::cast(SystemDictionary::Object_klass());
+    return SystemDictionary::Object_klass();
   } else {
     ShouldNotReachHere();
   }
@@ -1325,22 +1297,13 @@ JVMCI::CodeInstallResult JVMCIRuntime::validate_compile_task_dependencies(Depend
     return JVMCI::dependencies_failed;
   }
 
-  // Dependencies must be checked when the system dictionary changes
-  // or if we don't know whether it has changed (i.e., compile_state == NULL).
-  bool counter_changed = compile_state == NULL || compile_state->system_dictionary_modification_counter() != SystemDictionary::number_of_modifications();
   CompileTask* task = compile_state == NULL ? NULL : compile_state->task();
-  Dependencies::DepType result = dependencies->validate_dependencies(task, counter_changed, failure_detail);
+  Dependencies::DepType result = dependencies->validate_dependencies(task, failure_detail);
   if (result == Dependencies::end_marker) {
     return JVMCI::ok;
   }
 
-  if (!Dependencies::is_klass_type(result) || counter_changed) {
-    return JVMCI::dependencies_failed;
-  }
-  // The dependencies were invalid at the time of installation
-  // without any intervening modification of the system
-  // dictionary.  That means they were invalidly constructed.
-  return JVMCI::dependencies_invalid;
+  return JVMCI::dependencies_failed;
 }
 
 // Reports a pending exception and exits the VM.
@@ -1557,7 +1520,10 @@ JVMCI::CodeInstallResult JVMCIRuntime::register_method(JVMCIEnv* JVMCIENV,
                         comp_level, method_name, nm->entry_point());
             }
             // Allow the code to be executed
-            method->set_code(method, nm);
+            MutexLocker ml(CompiledMethod_lock, Mutex::_no_safepoint_check_flag);
+            if (nm->make_in_use()) {
+              method->set_code(method, nm);
+            }
           } else {
             LogTarget(Info, nmethod, install) lt;
             if (lt.is_enabled()) {
@@ -1566,12 +1532,14 @@ JVMCI::CodeInstallResult JVMCIRuntime::register_method(JVMCIEnv* JVMCIENV,
               lt.print("Installing osr method (%d) %s @ %d",
                         comp_level, method_name, entry_bci);
             }
-            InstanceKlass::cast(method->method_holder())->add_osr_nmethod(nm);
+            MutexLocker ml(CompiledMethod_lock, Mutex::_no_safepoint_check_flag);
+            if (nm->make_in_use()) {
+              InstanceKlass::cast(method->method_holder())->add_osr_nmethod(nm);
+            }
           }
         } else {
           assert(!nmethod_mirror.is_hotspot() || data->get_nmethod_mirror(nm, /* phantom_ref */ false) == HotSpotJVMCI::resolve(nmethod_mirror), "must be");
         }
-        nm->make_in_use();
       }
       result = nm != NULL ? JVMCI::ok :JVMCI::cache_full;
     }

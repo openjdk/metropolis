@@ -111,7 +111,7 @@ ciMethod::ciMethod(const methodHandle& h_m, ciInstanceKlass* holder) :
       _can_be_parsed = false;
     }
   } else {
-    CHECK_UNHANDLED_OOPS_ONLY(Thread::current()->clear_unhandled_oops());
+    DEBUG_ONLY(CompilerThread::current()->check_possible_safepoint());
   }
 
   if (h_m()->method_holder()->is_linked()) {
@@ -1454,8 +1454,8 @@ void ciMethod::print_impl(outputStream* st) {
 // ------------------------------------------------------------------
 
 static BasicType erase_to_word_type(BasicType bt) {
-  if (is_subword_type(bt)) return T_INT;
-  if (bt == T_ARRAY)       return T_OBJECT;
+  if (is_subword_type(bt))   return T_INT;
+  if (is_reference_type(bt)) return T_OBJECT;
   return bt;
 }
 

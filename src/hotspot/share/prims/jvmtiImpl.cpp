@@ -225,13 +225,6 @@ void GrowableCache::metadata_do(void f(Metadata*)) {
   }
 }
 
-void GrowableCache::gc_epilogue() {
-  int len = _elements->length();
-  for (int i=0; i<len; i++) {
-    _cache[i] = _elements->at(i)->getCacheValue();
-  }
-}
-
 //
 // class JvmtiBreakpoint
 //
@@ -389,10 +382,6 @@ void  JvmtiBreakpoints::metadata_do(void f(Metadata*)) {
   _bps.metadata_do(f);
 }
 
-void JvmtiBreakpoints::gc_epilogue() {
-  _bps.gc_epilogue();
-}
-
 void JvmtiBreakpoints::print() {
 #ifndef PRODUCT
   LogTarget(Trace, jvmti) log;
@@ -514,12 +503,6 @@ void JvmtiCurrentBreakpoints::metadata_do(void f(Metadata*)) {
   }
 }
 
-void JvmtiCurrentBreakpoints::gc_epilogue() {
-  if (_jvmti_breakpoints != NULL) {
-    _jvmti_breakpoints->gc_epilogue();
-  }
-}
-
 ///////////////////////////////////////////////////////////////
 //
 // class VM_GetOrSetLocal
@@ -605,7 +588,8 @@ bool VM_GetOrSetLocal::is_assignable(const char* ty_sign, Klass* klass, Thread* 
   assert(klass != NULL, "klass must not be NULL");
 
   int len = (int) strlen(ty_sign);
-  if (ty_sign[0] == 'L' && ty_sign[len-1] == ';') { // Need pure class/interface name
+  if (ty_sign[0] == JVM_SIGNATURE_CLASS &&
+      ty_sign[len-1] == JVM_SIGNATURE_ENDCLASS) { // Need pure class/interface name
     ty_sign++;
     len -= 2;
   }
@@ -898,6 +882,7 @@ bool JvmtiSuspendControl::resume(JavaThread *java_thread) {
 
 void JvmtiSuspendControl::print() {
 #ifndef PRODUCT
+  ResourceMark rm;
   LogStreamHandle(Trace, jvmti) log_stream;
   log_stream.print("Suspended Threads: [");
   for (JavaThreadIteratorWithHandle jtiwh; JavaThread *thread = jtiwh.next(); ) {

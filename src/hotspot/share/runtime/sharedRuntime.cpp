@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2018, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2019, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -57,7 +57,6 @@
 #include "runtime/arguments.hpp"
 #include "runtime/atomic.hpp"
 #include "runtime/biasedLocking.hpp"
-#include "runtime/compilationPolicy.hpp"
 #include "runtime/frame.inline.hpp"
 #include "runtime/handles.inline.hpp"
 #include "runtime/init.hpp"
@@ -1269,6 +1268,7 @@ bool SharedRuntime::resolve_sub_helper_internal(methodHandle callee_method, cons
     // will be supported.
     if (!callee_method->is_old() &&
         (callee == NULL || (callee->is_in_use() && callee_method->code() == callee))) {
+      NoSafepointVerifier nsv;
 #ifdef ASSERT
       // We must not try to patch to jump to an already unloaded method.
       if (dest_entry_point != 0) {
@@ -2032,7 +2032,7 @@ char* SharedRuntime::generate_class_cast_message(
   const char* caster_name = caster_klass->external_name();
 
   assert(target_klass != NULL || target_klass_name != NULL, "one must be provided");
-  const char* target_name = target_klass == NULL ? target_klass_name->as_C_string() :
+  const char* target_name = target_klass == NULL ? target_klass_name->as_klass_external_name() :
                                                    target_klass->external_name();
 
   size_t msglen = strlen(caster_name) + strlen("class ") + strlen(" cannot be cast to class ") + strlen(target_name) + 1;
@@ -2091,12 +2091,7 @@ JRT_BLOCK_ENTRY(void, SharedRuntime::complete_monitor_locking_C(oopDesc* _obj, B
     Atomic::inc(BiasedLocking::slow_path_entry_count_addr());
   }
   Handle h_obj(THREAD, obj);
-  if (UseBiasedLocking) {
-    // Retry fast entry if bias is revoked to avoid unnecessary inflation
-    ObjectSynchronizer::fast_enter(h_obj, lock, true, CHECK);
-  } else {
-    ObjectSynchronizer::slow_enter(h_obj, lock, CHECK);
-  }
+  ObjectSynchronizer::enter(h_obj, lock, CHECK);
   assert(!HAS_PENDING_EXCEPTION, "Should have no exception here");
   JRT_BLOCK_END
 JRT_END
@@ -2127,7 +2122,7 @@ JRT_LEAF(void, SharedRuntime::complete_monitor_unlocking_C(oopDesc* _obj, BasicL
   {
     // Exit must be non-blocking, and therefore no exceptions can be thrown.
     EXCEPTION_MARK;
-    ObjectSynchronizer::slow_exit(obj, lock, THREAD);
+    ObjectSynchronizer::exit(obj, lock, THREAD);
   }
 
 #ifdef MIGHT_HAVE_PENDING
@@ -2814,7 +2809,7 @@ void AdapterHandlerEntry::relocate(address new_base) {
 void AdapterHandlerEntry::deallocate() {
   delete _fingerprint;
 #ifdef ASSERT
-  if (_saved_code) FREE_C_HEAP_ARRAY(unsigned char, _saved_code);
+  FREE_C_HEAP_ARRAY(unsigned char, _saved_code);
 #endif
 }
 
@@ -2849,10 +2844,16 @@ bool AdapterHandlerEntry::compare_code(unsigned char* buffer, int length) {
 void AdapterHandlerLibrary::create_native_wrapper(const methodHandle& method) {
   ResourceMark rm;
   nmethod* nm = NULL;
+  address critical_entry = NULL;
 
   assert(method->is_native(), "must be native");
   assert(method->is_method_handle_intrinsic() ||
          method->has_native_function(), "must have something valid to call!");
+
+  if (CriticalJNINatives && !method->is_method_handle_intrinsic()) {
+    // We perform the I/O with transition to native before acquiring AdapterHandlerLibrary_lock.
+    critical_entry = NativeLookup::lookup_critical_entry(method);
+  }
 
   {
     // Perform the work while holding the lock, but perform any printing outside the lock
@@ -2898,10 +2899,15 @@ void AdapterHandlerLibrary::create_native_wrapper(const methodHandle& method) {
       int comp_args_on_stack = SharedRuntime::java_calling_convention(sig_bt, regs, total_args_passed, is_outgoing);
 
       // Generate the compiled-to-native wrapper code
-      nm = SharedRuntime::generate_native_wrapper(&_masm, method, compile_id, sig_bt, regs, ret_type);
+      nm = SharedRuntime::generate_native_wrapper(&_masm, method, compile_id, sig_bt, regs, ret_type, critical_entry);
 
       if (nm != NULL) {
-        method->set_code(method, nm);
+        {
+          MutexLocker pl(CompiledMethod_lock, Mutex::_no_safepoint_check_flag);
+          if (nm->make_in_use()) {
+            method->set_code(method, nm);
+          }
+        }
 
         DirectiveSet* directive = DirectivesStack::getDefaultDirective(CompileBroker::compiler(CompLevel_simple));
         if (directive->PrintAssemblyOption) {
@@ -2984,28 +2990,28 @@ VMRegPair *SharedRuntime::find_callee_arguments(Symbol* sig, bool has_receiver, 
     sig_bt[cnt++] = T_OBJECT; // Receiver is argument 0; not in signature
   }
 
-  while (*s != ')') {          // Find closing right paren
-    switch (*s++) {            // Switch on signature character
-    case 'B': sig_bt[cnt++] = T_BYTE;    break;
-    case 'C': sig_bt[cnt++] = T_CHAR;    break;
-    case 'D': sig_bt[cnt++] = T_DOUBLE;  sig_bt[cnt++] = T_VOID; break;
-    case 'F': sig_bt[cnt++] = T_FLOAT;   break;
-    case 'I': sig_bt[cnt++] = T_INT;     break;
-    case 'J': sig_bt[cnt++] = T_LONG;    sig_bt[cnt++] = T_VOID; break;
-    case 'S': sig_bt[cnt++] = T_SHORT;   break;
-    case 'Z': sig_bt[cnt++] = T_BOOLEAN; break;
-    case 'V': sig_bt[cnt++] = T_VOID;    break;
-    case 'L':                   // Oop
-      while (*s++ != ';');   // Skip signature
+  while (*s != JVM_SIGNATURE_ENDFUNC) { // Find closing right paren
+    switch (*s++) {                     // Switch on signature character
+    case JVM_SIGNATURE_BYTE:    sig_bt[cnt++] = T_BYTE;    break;
+    case JVM_SIGNATURE_CHAR:    sig_bt[cnt++] = T_CHAR;    break;
+    case JVM_SIGNATURE_DOUBLE:  sig_bt[cnt++] = T_DOUBLE;  sig_bt[cnt++] = T_VOID; break;
+    case JVM_SIGNATURE_FLOAT:   sig_bt[cnt++] = T_FLOAT;   break;
+    case JVM_SIGNATURE_INT:     sig_bt[cnt++] = T_INT;     break;
+    case JVM_SIGNATURE_LONG:    sig_bt[cnt++] = T_LONG;    sig_bt[cnt++] = T_VOID; break;
+    case JVM_SIGNATURE_SHORT:   sig_bt[cnt++] = T_SHORT;   break;
+    case JVM_SIGNATURE_BOOLEAN: sig_bt[cnt++] = T_BOOLEAN; break;
+    case JVM_SIGNATURE_VOID:    sig_bt[cnt++] = T_VOID;    break;
+    case JVM_SIGNATURE_CLASS: // Oop
+      while (*s++ != JVM_SIGNATURE_ENDCLASS);   // Skip signature
       sig_bt[cnt++] = T_OBJECT;
       break;
-    case '[': {                 // Array
+    case JVM_SIGNATURE_ARRAY: { // Array
       do {                      // Skip optional size
         while (*s >= '0' && *s <= '9') s++;
-      } while (*s++ == '[');   // Nested arrays?
+      } while (*s++ == JVM_SIGNATURE_ARRAY);   // Nested arrays?
       // Skip element type
-      if (s[-1] == 'L')
-        while (*s++ != ';'); // Skip signature
+      if (s[-1] == JVM_SIGNATURE_CLASS)
+        while (*s++ != JVM_SIGNATURE_ENDCLASS); // Skip signature
       sig_bt[cnt++] = T_ARRAY;
       break;
     }
@@ -3106,10 +3112,10 @@ JRT_LEAF(intptr_t*, SharedRuntime::OSR_migration_begin( JavaThread *thread) )
     if (kptr2->obj() != NULL) {         // Avoid 'holes' in the monitor array
       BasicLock *lock = kptr2->lock();
       // Inflate so the displaced header becomes position-independent
-      if (lock->displaced_header()->is_unlocked())
+      if (lock->displaced_header().is_unlocked())
         ObjectSynchronizer::inflate_helper(kptr2->obj());
       // Now the displaced header is free to move
-      buf[i++] = (intptr_t)lock->displaced_header();
+      buf[i++] = (intptr_t)lock->displaced_header().value();
       buf[i++] = cast_from_oop<intptr_t>(kptr2->obj());
     }
   }

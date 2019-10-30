@@ -45,11 +45,6 @@ class JVMCI : public AllStatic {
   friend class JVMCIEnv;
 
  private:
-  // Handles to objects in the HotSpot heap.
-  static OopStorage* _object_handles;
-
-  static OopStorage* object_handles();
-
   // Handles to Metadata objects.
   static MetadataHandleBlock* _metadata_handles;
 
@@ -65,7 +60,6 @@ class JVMCI : public AllStatic {
   enum CodeInstallResult {
      ok,
      dependencies_failed,
-     dependencies_invalid,
      cache_full,
      code_too_large
   };
@@ -73,8 +67,6 @@ class JVMCI : public AllStatic {
   static void do_unloading(bool unloading_occurred);
 
   static void metadata_do(void f(Metadata*));
-
-  static void oops_do(OopClosure* f);
 
   static void shutdown();
 

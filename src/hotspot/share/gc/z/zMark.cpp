@@ -34,7 +34,7 @@
 #include "gc/z/zRootsIterator.hpp"
 #include "gc/z/zStat.hpp"
 #include "gc/z/zTask.hpp"
-#include "gc/z/zThread.hpp"
+#include "gc/z/zThread.inline.hpp"
 #include "gc/z/zThreadLocalAllocBuffer.hpp"
 #include "gc/z/zUtils.inline.hpp"
 #include "gc/z/zWorkers.inline.hpp"
@@ -133,6 +133,9 @@ public:
     // Update thread local address bad mask
     ZThreadLocalData::set_address_bad_mask(thread, ZAddressBadMask);
 
+    // Mark invisible root
+    ZThreadLocalData::do_invisible_root(thread, ZBarrier::mark_barrier_on_invisible_root_oop_field);
+
     // Retire TLAB
     ZThreadLocalAllocBuffer::retire(thread);
   }
@@ -156,7 +159,7 @@ public:
   ZMarkRootsTask(ZMark* mark) :
       ZTask("ZMarkRootsTask"),
       _mark(mark),
-      _roots() {}
+      _roots(false /* visit_jvmti_weak_export */) {}
 
   virtual void work() {
     _roots.oops_do(&_cl);
@@ -339,7 +342,7 @@ void ZMark::mark_and_follow(ZMarkCache* cache, ZMarkStackEntry entry) {
     return;
   }
 
-  // Decode object address
+  // Decode object address and follow flag
   const uintptr_t addr = entry.object_address();
 
   if (!try_mark_object(cache, addr, finalizable)) {
@@ -348,7 +351,13 @@ void ZMark::mark_and_follow(ZMarkCache* cache, ZMarkStackEntry entry) {
   }
 
   if (is_array(addr)) {
-    follow_array_object(objArrayOop(ZOop::from_address(addr)), finalizable);
+    // Decode follow flag
+    const bool follow = entry.follow();
+
+    // The follow flag is currently only relevant for object arrays
+    if (follow) {
+      follow_array_object(objArrayOop(ZOop::from_address(addr)), finalizable);
+    }
   } else {
     follow_object(ZOop::from_address(addr), finalizable);
   }
@@ -634,17 +643,16 @@ public:
 class ZMarkConcurrentRootsTask : public ZTask {
 private:
   SuspendibleThreadSetJoiner          _sts_joiner;
-  ZConcurrentRootsIterator            _roots;
+  ZConcurrentRootsIteratorClaimStrong _roots;
   ZMarkConcurrentRootsIteratorClosure _cl;
 
 public:
   ZMarkConcurrentRootsTask(ZMark* mark) :
       ZTask("ZMarkConcurrentRootsTask"),
-      _sts_joiner(true /* active */),
-      _roots(ClassLoaderData::_claim_strong),
+      _sts_joiner(),
+      _roots(),
       _cl() {
     ClassLoaderDataGraph_lock->lock();
-    ClassLoaderDataGraph::clear_claimed_marks();
   }
 
   ~ZMarkConcurrentRootsTask() {

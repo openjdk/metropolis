@@ -29,6 +29,7 @@
 #include "gc/z/zMetronome.hpp"
 #include "logging/logHandle.hpp"
 #include "memory/allocation.hpp"
+#include "utilities/globalDefinitions.hpp"
 #include "utilities/numberSeq.hpp"
 #include "utilities/ticks.hpp"
 
@@ -271,7 +272,7 @@ public:
 //
 class ZStatTimerDisable : public StackObj {
 private:
-  static __thread uint32_t _active;
+  static THREAD_LOCAL uint32_t _active;
 
 public:
   ZStatTimerDisable() {
@@ -314,8 +315,8 @@ public:
 //
 // Stat sample/increment
 //
-void ZStatSample(const ZStatSampler& sampler, uint64_t value, bool trace = ZStatisticsForceTrace);
-void ZStatInc(const ZStatCounter& counter, uint64_t increment = 1, bool trace = ZStatisticsForceTrace);
+void ZStatSample(const ZStatSampler& sampler, uint64_t value);
+void ZStatInc(const ZStatCounter& counter, uint64_t increment = 1);
 void ZStatInc(const ZStatUnsampledCounter& counter, uint64_t increment = 1);
 
 //
@@ -373,6 +374,8 @@ public:
   static void at_start();
   static void at_end(double boost_factor);
 
+  static bool is_first();
+  static bool is_warm();
   static uint64_t ncycles();
   static const AbsSeq& normalized_duration();
   static double time_since_last();
@@ -518,6 +521,8 @@ private:
     size_t free_low;
   } _at_relocate_end;
 
+  static size_t capacity_high();
+  static size_t capacity_low();
   static size_t available(size_t used);
   static size_t reserve(size_t used);
   static size_t free(size_t used);

@@ -29,7 +29,7 @@ import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-import com.sun.source.tree.CaseTree.CaseKind;
+import com.sun.source.tree.CaseTree;
 import com.sun.source.tree.MemberReferenceTree.ReferenceMode;
 import com.sun.source.tree.ModuleTree.ModuleKind;
 
@@ -1432,8 +1432,8 @@ public class JavacParser implements Parser {
         }
         List<JCStatement> stats = null;
         JCTree body = null;
-        @SuppressWarnings("removal")
-        CaseKind kind;
+        @SuppressWarnings("preview")
+        CaseTree.CaseKind kind;
         switch (token.kind) {
             case ARROW:
                 checkSourceLevel(Feature.SWITCH_RULE);
@@ -2897,8 +2897,8 @@ public class JavacParser implements Parser {
                 nextToken();
                 checkSourceLevel(Feature.SWITCH_MULTIPLE_CASE_LABELS);
             };
-            @SuppressWarnings("removal")
-            CaseKind caseKind;
+            @SuppressWarnings("preview")
+            CaseTree.CaseKind caseKind;
             JCTree body = null;
             if (token.kind == ARROW) {
                 checkSourceLevel(Feature.SWITCH_RULE);
@@ -2922,8 +2922,8 @@ public class JavacParser implements Parser {
         }
         case DEFAULT: {
             nextToken();
-            @SuppressWarnings("removal")
-            CaseKind caseKind;
+            @SuppressWarnings("preview")
+            CaseTree.CaseKind caseKind;
             JCTree body = null;
             if (token.kind == ARROW) {
                 checkSourceLevel(Feature.SWITCH_RULE);
@@ -3756,23 +3756,59 @@ public class JavacParser implements Parser {
     List<JCTree> enumBody(Name enumName) {
         accept(LBRACE);
         ListBuffer<JCTree> defs = new ListBuffer<>();
+        boolean wasSemi = false;
+        boolean hasStructuralErrors = false;
+        boolean wasError = false;
         if (token.kind == COMMA) {
             nextToken();
-        } else if (token.kind != RBRACE && token.kind != SEMI) {
-            defs.append(enumeratorDeclaration(enumName));
-            while (token.kind == COMMA) {
+            if (token.kind == SEMI) {
+                wasSemi = true;
                 nextToken();
-                if (token.kind == RBRACE || token.kind == SEMI) break;
-                defs.append(enumeratorDeclaration(enumName));
-            }
-            if (token.kind != SEMI && token.kind != RBRACE) {
-                defs.append(syntaxError(token.pos, Errors.Expected3(COMMA, RBRACE, SEMI)));
-                nextToken();
+            } else if (token.kind != RBRACE) {
+                reportSyntaxError(S.prevToken().endPos,
+                                  Errors.Expected2(RBRACE, SEMI));
+                wasError = true;
             }
         }
-        if (token.kind == SEMI) {
-            nextToken();
-            while (token.kind != RBRACE && token.kind != EOF) {
+        while (token.kind != RBRACE && token.kind != EOF) {
+            if (token.kind == SEMI) {
+                accept(SEMI);
+                wasSemi = true;
+                if (token.kind == RBRACE || token.kind == EOF) break;
+            }
+            EnumeratorEstimate memberType = estimateEnumeratorOrMember(enumName);
+            if (memberType == EnumeratorEstimate.UNKNOWN) {
+                memberType = wasSemi ? EnumeratorEstimate.MEMBER
+                                     : EnumeratorEstimate.ENUMERATOR;
+            }
+            if (memberType == EnumeratorEstimate.ENUMERATOR) {
+                wasError = false;
+                if (wasSemi && !hasStructuralErrors) {
+                    reportSyntaxError(token.pos, Errors.EnumConstantNotExpected);
+                    hasStructuralErrors = true;
+                }
+                defs.append(enumeratorDeclaration(enumName));
+                if (token.pos <= endPosTable.errorEndPos) {
+                    // error recovery
+                   skip(false, true, true, false);
+                } else {
+                    if (token.kind != RBRACE && token.kind != SEMI && token.kind != EOF) {
+                        if (token.kind == COMMA) {
+                            nextToken();
+                        } else {
+                            setErrorEndPos(token.pos);
+                            reportSyntaxError(S.prevToken().endPos,
+                                              Errors.Expected3(COMMA, RBRACE, SEMI));
+                            wasError = true;
+                        }
+                    }
+                }
+            } else {
+                if (!wasSemi && !hasStructuralErrors && !wasError) {
+                    reportSyntaxError(token.pos, Errors.EnumConstantExpected);
+                    hasStructuralErrors = true;
+                }
+                wasError = false;
                 defs.appendList(classOrInterfaceBodyDeclaration(enumName,
                                                                 false));
                 if (token.pos <= endPosTable.errorEndPos) {
@@ -3783,6 +3819,28 @@ public class JavacParser implements Parser {
         }
         accept(RBRACE);
         return defs.toList();
+    }
+
+    private EnumeratorEstimate estimateEnumeratorOrMember(Name enumName) {
+        if (token.kind == TokenKind.IDENTIFIER && token.name() != enumName) {
+            Token next = S.token(1);
+            switch (next.kind) {
+                case LPAREN: case LBRACE: case COMMA: case SEMI:
+                    return EnumeratorEstimate.ENUMERATOR;
+            }
+        }
+        switch (token.kind) {
+            case IDENTIFIER: case MONKEYS_AT: case LT:
+                return EnumeratorEstimate.UNKNOWN;
+            default:
+                return EnumeratorEstimate.MEMBER;
+        }
+    }
+
+    private enum EnumeratorEstimate {
+        ENUMERATOR,
+        MEMBER,
+        UNKNOWN;
     }
 
     /** EnumeratorDeclaration = AnnotationsOpt [TypeArguments] IDENTIFIER [ Arguments ] [ "{" ClassBody "}" ]

@@ -84,7 +84,6 @@ class SymbolPropertyTable;
 class ProtectionDomainCacheTable;
 class ProtectionDomainCacheEntry;
 class GCTimer;
-class OopStorage;
 
 #define WK_KLASS_ENUM_NAME(kname)    kname##_knum
 
@@ -156,6 +155,7 @@ class OopStorage;
   do_klass(reflect_ConstantPool_klass,                  reflect_ConstantPool                                  ) \
   do_klass(reflect_UnsafeStaticFieldAccessorImpl_klass, reflect_UnsafeStaticFieldAccessorImpl                 ) \
   do_klass(reflect_CallerSensitive_klass,               reflect_CallerSensitive                               ) \
+  do_klass(reflect_NativeConstructorAccessorImpl_klass, reflect_NativeConstructorAccessorImpl                 ) \
                                                                                                                 \
   /* support for dynamic typing; it's OK if these are NULL in earlier JDKs */                                   \
   do_klass(DirectMethodHandle_klass,                    java_lang_invoke_DirectMethodHandle                   ) \
@@ -218,7 +218,6 @@ class OopStorage;
   do_klass(Iterator_klass,                              java_util_Iterator                                    ) \
                                                                                                                 \
   /*end*/
-
 
 class SystemDictionary : AllStatic {
   friend class BootstrapInfo;
@@ -348,7 +347,9 @@ public:
   static bool do_unloading(GCTimer* gc_timer);
 
   // Applies "f->do_oop" to all root oops in the system dictionary.
-  static void oops_do(OopClosure* f);
+  // If include_handles is true (the default), then the handles in the
+  // vm_global OopStorage object are included.
+  static void oops_do(OopClosure* f, bool include_handles = true);
 
   // System loader lock
   static oop system_loader_lock()           { return _system_loader_lock_obj; }
@@ -361,13 +362,6 @@ public:
   static void print();
   static void print_on(outputStream* st);
   static void dump(outputStream* st, bool verbose);
-
-  // Monotonically increasing counter which grows as classes are
-  // loaded or modifications such as hot-swapping or setting/removing
-  // of breakpoints are performed
-  static inline int number_of_modifications()     { assert_locked_or_safepoint(Compile_lock); return _number_of_modifications; }
-  // Needed by evolution and breakpoint code
-  static inline void notice_modification()        { assert_locked_or_safepoint(Compile_lock); ++_number_of_modifications;      }
 
   // Verification
   static void verify();
@@ -388,7 +382,6 @@ public:
     int limit = (int)end_id + 1;
     resolve_wk_klasses_until((WKID) limit, start_id, THREAD);
   }
-
 public:
   #define WK_KLASS_DECLARE(name, symbol) \
     static InstanceKlass* name() { return check_klass(_well_known_klasses[WK_KLASS_ENUM_NAME(name)]); } \
@@ -435,9 +428,6 @@ protected:
   }
 
 public:
-  // Tells whether ClassLoader.checkPackageAccess is present
-  static bool has_checkPackageAccess()      { return _has_checkPackageAccess; }
-
   static bool Parameter_klass_loaded()      { return WK_KLASS(reflect_Parameter_klass) != NULL; }
   static bool Class_klass_loaded()          { return WK_KLASS(Class_klass) != NULL; }
   static bool Cloneable_klass_loaded()      { return WK_KLASS(Cloneable_klass) != NULL; }
@@ -555,11 +545,6 @@ public:
   // Hashtable holding placeholders for classes being loaded.
   static PlaceholderTable*       _placeholders;
 
-  // Monotonically increasing counter which grows with
-  // loading classes as well as hot-swapping and breakpoint setting
-  // and removal.
-  static int                     _number_of_modifications;
-
   // Lock object for system class loader
   static oop                     _system_loader_lock_obj;
 
@@ -574,9 +559,6 @@ public:
 
   // ProtectionDomain cache
   static ProtectionDomainCacheTable*   _pd_cache_table;
-
-  // VM weak OopStorage object.
-  static OopStorage*             _vm_weak_oop_storage;
 
 protected:
   static void validate_protection_domain(InstanceKlass* klass,
@@ -632,9 +614,6 @@ public:
     return !m->is_public() && m->method_holder() == SystemDictionary::Object_klass();
   }
 
-  static void initialize_oop_storage();
-  static OopStorage* vm_weak_oop_storage();
-
 protected:
   // Setup link to hierarchy
   static void add_to_hierarchy(InstanceKlass* k, TRAPS);
@@ -646,21 +625,6 @@ protected:
 
   // Basic find on classes in the midst of being loaded
   static Symbol* find_placeholder(Symbol* name, ClassLoaderData* loader_data);
-
-  // Add a placeholder for a class being loaded
-  static void add_placeholder(int index,
-                              Symbol* class_name,
-                              ClassLoaderData* loader_data);
-  static void remove_placeholder(int index,
-                                 Symbol* class_name,
-                                 ClassLoaderData* loader_data);
-
-  // Performs cleanups after resolve_super_or_fail. This typically needs
-  // to be called on failure.
-  // Won't throw, but can block.
-  static void resolution_cleanups(Symbol* class_name,
-                                  ClassLoaderData* loader_data,
-                                  TRAPS);
 
   // Resolve well-known classes so they can be used like SystemDictionary::String_klass()
   static void resolve_well_known_classes(TRAPS);
@@ -682,8 +646,6 @@ protected:
 private:
   static oop  _java_system_loader;
   static oop  _java_platform_loader;
-
-  static bool _has_checkPackageAccess;
 
 public:
   static TableStatistics placeholders_statistics();

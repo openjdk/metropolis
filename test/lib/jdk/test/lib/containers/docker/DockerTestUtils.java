@@ -40,12 +40,10 @@ import java.util.List;
 import jdk.test.lib.Container;
 import jdk.test.lib.Utils;
 import jdk.test.lib.process.OutputAnalyzer;
-import jdk.test.lib.process.ProcessTools;
 import jtreg.SkippedException;
 
 
 public class DockerTestUtils {
-    private static final String FS = File.separator;
     private static boolean isDockerEngineAvailable = false;
     private static boolean wasDockerEngineChecked = false;
 
@@ -189,7 +187,7 @@ public class DockerTestUtils {
     /**
      * Build the docker command to run java inside a container
      *
-     * @param DockerRunOptions optins for running docker
+     * @param DockerRunOptions options for running docker
      *
      * @return command
      * @throws Exception
@@ -212,6 +210,7 @@ public class DockerTestUtils {
         if (opts.appendTestJavaOptions) {
             Collections.addAll(cmd, Utils.getTestJavaOpts());
         }
+        cmd.addAll(opts.javaOptsAppended);
 
         cmd.add(opts.classToRun);
         cmd.addAll(opts.classParams);
@@ -222,7 +221,7 @@ public class DockerTestUtils {
     /**
      * Run Java inside the docker image with specified parameters and options.
      *
-     * @param DockerRunOptions optins for running docker
+     * @param DockerRunOptions options for running docker
      *
      * @return output of the run command
      * @throws Exception
@@ -235,7 +234,7 @@ public class DockerTestUtils {
      /**
      * Remove docker image
      *
-     * @param DockerRunOptions optins for running docker
+     * @param DockerRunOptions options for running docker
      * @throws Exception
      */
     public static void removeDockerImage(String imageNameAndTag) throws Exception {

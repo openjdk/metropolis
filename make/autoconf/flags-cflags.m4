@@ -121,11 +121,7 @@ AC_DEFUN([FLAGS_SETUP_DEBUG_SYMBOLS],
     # -g0 enables debug symbols without disabling inlining.
     CFLAGS_DEBUG_SYMBOLS="-g0 -xs"
   elif test "x$TOOLCHAIN_TYPE" = xxlc; then
-    if test "x$XLC_USES_CLANG" = xtrue; then
-      CFLAGS_DEBUG_SYMBOLS="-g1"
-    else
-      CFLAGS_DEBUG_SYMBOLS="-g"
-    fi
+    CFLAGS_DEBUG_SYMBOLS="-g1"
   elif test "x$TOOLCHAIN_TYPE" = xmicrosoft; then
     CFLAGS_DEBUG_SYMBOLS="-Z7 -d2Zi+"
   fi
@@ -174,11 +170,11 @@ AC_DEFUN([FLAGS_SETUP_WARNINGS],
       DISABLE_WARNING_PREFIX="-erroff="
       CFLAGS_WARNINGS_ARE_ERRORS="-errwarn=%all"
 
-      WARNINGS_ENABLE_ALL_CFLAGS="-v"
-      WARNINGS_ENABLE_ALL_CXXFLAGS="+w"
+      WARNINGS_ENABLE_ALL_CFLAGS="-v -fd -xtransition"
+      WARNINGS_ENABLE_ALL_CXXFLAGS="+w +w2"
 
-      DISABLED_WARNINGS_C=""
-      DISABLED_WARNINGS_CXX=""
+      DISABLED_WARNINGS_C="E_OLD_STYLE_FUNC_DECL E_OLD_STYLE_FUNC_DEF E_SEMANTICS_OF_OP_CHG_IN_ANSI_C E_NO_REPLACEMENT_IN_STRING E_DECLARATION_IN_CODE"
+      DISABLED_WARNINGS_CXX="inllargeuse inllargeint notused wemptydecl notemsource"
       ;;
 
     gcc)
@@ -229,7 +225,7 @@ AC_DEFUN([FLAGS_SETUP_WARNINGS],
       ;;
 
     xlc)
-      DISABLE_WARNING_PREFIX="-qsuppress="
+      DISABLE_WARNING_PREFIX="-Wno-"
       CFLAGS_WARNINGS_ARE_ERRORS="-qhalt=w"
 
       # Possibly a better subset than "all" is "lan:trx:ret:zea:cmp:ret"
@@ -576,10 +572,10 @@ AC_DEFUN([FLAGS_SETUP_CFLAGS_HELPER],
 
   elif test "x$TOOLCHAIN_TYPE" = xxlc; then
     # Suggested additions: -qsrcmsg to get improved error reporting
-    TOOLCHAIN_CFLAGS_JDK="-qchars=signed -qfullpath -qsaveopt -qstackprotect"  # add on both CFLAGS
-    TOOLCHAIN_CFLAGS_JVM="-qtune=balanced \
-        -qalias=noansi -qstrict -qtls=default -qlanglvl=c99vla \
-        -qlanglvl=noredefmac -qnortti -qnoeh -qignerrno -qstackprotect"
+    # set -qtbtable=full for a better traceback table/better stacks in hs_err when xlc16 is used
+    TOOLCHAIN_CFLAGS_JDK="-qtbtable=full -qchars=signed -qfullpath -qsaveopt -qstackprotect"  # add on both CFLAGS
+    TOOLCHAIN_CFLAGS_JVM="-qtbtable=full -qtune=balanced \
+        -qalias=noansi -qstrict -qtls=default -qnortti -qnoeh -qignerrno -qstackprotect"
   elif test "x$TOOLCHAIN_TYPE" = xmicrosoft; then
     TOOLCHAIN_CFLAGS_JVM="-nologo -MD -MP"
     TOOLCHAIN_CFLAGS_JDK="-nologo -MD -Zc:wchar_t-"
@@ -698,6 +694,20 @@ AC_DEFUN([FLAGS_SETUP_CFLAGS_HELPER],
       OS_CFLAGS_JVM="$OS_CFLAGS_JVM -DNEEDS_LIBRT"
     fi
   fi
+
+  # Extra flags needed when building optional static versions of certain
+  # JDK libraries.
+  STATIC_LIBS_CFLAGS="-DSTATIC_BUILD=1"
+  if test "x$TOOLCHAIN_TYPE" = xgcc || test "x$TOOLCHAIN_TYPE" = xclang; then
+    STATIC_LIBS_CFLAGS="$STATIC_LIBS_CFLAGS -ffunction-sections -fdata-sections"
+  fi
+  if test "x$TOOLCHAIN_TYPE" = xgcc; then
+    # Disable relax-relocation to enable compatibility with older linkers
+    RELAX_RELOCATIONS_FLAG="-Xassembler -mrelax-relocations=no"
+    FLAGS_COMPILER_CHECK_ARGUMENTS(ARGUMENT: [${RELAX_RELOCATIONS_FLAG}],
+        IF_TRUE: [STATIC_LIBS_CFLAGS="$STATIC_LIBS_CFLAGS ${RELAX_RELOCATIONS_FLAG}"])
+  fi
+  AC_SUBST(STATIC_LIBS_CFLAGS)
 ])
 
 ################################################################################

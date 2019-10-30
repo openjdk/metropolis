@@ -232,12 +232,9 @@ void VM_RedefineClasses::doit() {
     ResolvedMethodTable::adjust_method_entries(&trace_name_printed);
   }
 
-  // Disable any dependent concurrent compilations
-  SystemDictionary::notice_modification();
-
-  // Set flag indicating that some invariants are no longer true.
+  // Increment flag indicating that some invariants are no longer true.
   // See jvmtiExport.hpp for detailed explanation.
-  JvmtiExport::set_has_redefined_a_class();
+  JvmtiExport::increment_redefinition_count();
 
   // check_class() is optionally called for product bits, but is
   // always called for non-product bits.
@@ -1626,6 +1623,11 @@ jvmtiError VM_RedefineClasses::merge_cp_and_rewrite(
     return JVMTI_ERROR_INTERNAL;
   }
 
+  if (old_cp->has_dynamic_constant()) {
+    merge_cp->set_has_dynamic_constant();
+    scratch_cp->set_has_dynamic_constant();
+  }
+
   log_info(redefine, class, constantpool)("merge_cp_len=%d, index_map_len=%d", merge_cp_length, _index_map_count);
 
   if (_index_map_count == 0) {
@@ -2164,14 +2166,14 @@ bool VM_RedefineClasses::rewrite_cp_refs_in_element_value(
 
   switch (tag) {
     // These BaseType tag values are from Table 4.2 in VM spec:
-    case 'B':  // byte
-    case 'C':  // char
-    case 'D':  // double
-    case 'F':  // float
-    case 'I':  // int
-    case 'J':  // long
-    case 'S':  // short
-    case 'Z':  // boolean
+    case JVM_SIGNATURE_BYTE:
+    case JVM_SIGNATURE_CHAR:
+    case JVM_SIGNATURE_DOUBLE:
+    case JVM_SIGNATURE_FLOAT:
+    case JVM_SIGNATURE_INT:
+    case JVM_SIGNATURE_LONG:
+    case JVM_SIGNATURE_SHORT:
+    case JVM_SIGNATURE_BOOLEAN:
 
     // The remaining tag values are from Table 4.8 in the 2nd-edition of
     // the VM spec:
@@ -2242,7 +2244,7 @@ bool VM_RedefineClasses::rewrite_cp_refs_in_element_value(
       }
       break;
 
-    case '[':
+    case JVM_SIGNATURE_ARRAY:
     {
       if ((byte_i_ref + 2) > annotations_typeArray->length()) {
         // not enough room for a num_values field
@@ -3249,6 +3251,10 @@ void VM_RedefineClasses::set_new_constant_pool(
   // reference to the cp holder is needed for copy_operands()
   smaller_cp->set_pool_holder(scratch_class);
 
+  if (scratch_cp->has_dynamic_constant()) {
+    smaller_cp->set_has_dynamic_constant();
+  }
+
   scratch_cp->copy_cp_to(1, scratch_cp_length - 1, smaller_cp, 1, THREAD);
   if (HAS_PENDING_EXCEPTION) {
     // Exception is handled in the caller
@@ -3520,15 +3526,6 @@ void VM_RedefineClasses::update_jmethod_ids() {
       Method::change_method_associated_with_jmethod_id(jmid, new_method_h());
       assert(Method::resolve_jmethod_id(jmid) == _matching_new_methods[j],
              "should be replaced");
-    }
-  }
-  // Update deleted jmethodID
-  for (int j = 0; j < _deleted_methods_length; ++j) {
-    Method* old_method = _deleted_methods[j];
-    jmethodID jmid = old_method->find_jmethod_id_or_null();
-    if (jmid != NULL) {
-      // Change the jmethodID to point to NSME.
-      Method::change_method_associated_with_jmethod_id(jmid, Universe::throw_no_such_method_error());
     }
   }
 }

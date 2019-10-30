@@ -25,9 +25,11 @@
 #include "precompiled.hpp"
 #include "classfile/classLoaderDataGraph.hpp"
 #include "classfile/metadataOnStackMark.hpp"
+#include "classfile/symbolTable.hpp"
 #include "classfile/systemDictionary.hpp"
 #include "code/codeCache.hpp"
 #include "code/debugInfoRec.hpp"
+#include "compiler/compilationPolicy.hpp"
 #include "gc/shared/collectedHeap.inline.hpp"
 #include "interpreter/bytecodeStream.hpp"
 #include "interpreter/bytecodeTracer.hpp"
@@ -54,7 +56,6 @@
 #include "prims/methodHandles.hpp"
 #include "prims/nativeLookup.hpp"
 #include "runtime/arguments.hpp"
-#include "runtime/compilationPolicy.hpp"
 #include "runtime/frame.inline.hpp"
 #include "runtime/handles.inline.hpp"
 #include "runtime/init.hpp"
@@ -103,7 +104,7 @@ Method::Method(ConstMethod* xconst, AccessFlags access_flags) {
   // Fix and bury in Method*
   set_interpreter_entry(NULL); // sets i2i entry and from_int
   set_adapter_entry(NULL);
-  clear_code(false /* don't need a lock */); // from_c/from_i get set to c2i/i2i
+  Method::clear_code(); // from_c/from_i get set to c2i/i2i
 
   if (access_flags.is_native()) {
     clear_native_function();
@@ -118,17 +119,22 @@ Method::Method(ConstMethod* xconst, AccessFlags access_flags) {
 void Method::deallocate_contents(ClassLoaderData* loader_data) {
   MetadataFactory::free_metadata(loader_data, constMethod());
   set_constMethod(NULL);
-#if INCLUDE_JVMCI
-  if (method_data()) {
-    FailedSpeculation::free_failed_speculations(method_data()->get_failed_speculations_address());
-  }
-#endif
   MetadataFactory::free_metadata(loader_data, method_data());
   set_method_data(NULL);
   MetadataFactory::free_metadata(loader_data, method_counters());
   clear_method_counters();
   // The nmethod will be gone when we get here.
   if (code() != NULL) _code = NULL;
+}
+
+void Method::release_C_heap_structures() {
+  if (method_data()) {
+#if INCLUDE_JVMCI
+    FailedSpeculation::free_failed_speculations(method_data()->get_failed_speculations_address());
+#endif
+    // Destroy MethodData
+    method_data()->~MethodData();
+  }
 }
 
 address Method::get_i2c_entry() {
@@ -373,7 +379,83 @@ void Method::set_itable_index(int index) {
   assert(valid_itable_index(), "");
 }
 
+// The RegisterNatives call being attempted tried to register with a method that
+// is not native.  Ask JVM TI what prefixes have been specified.  Then check
+// to see if the native method is now wrapped with the prefixes.  See the
+// SetNativeMethodPrefix(es) functions in the JVM TI Spec for details.
+static Method* find_prefixed_native(Klass* k, Symbol* name, Symbol* signature, TRAPS) {
+#if INCLUDE_JVMTI
+  ResourceMark rm(THREAD);
+  Method* method;
+  int name_len = name->utf8_length();
+  char* name_str = name->as_utf8();
+  int prefix_count;
+  char** prefixes = JvmtiExport::get_all_native_method_prefixes(&prefix_count);
+  for (int i = 0; i < prefix_count; i++) {
+    char* prefix = prefixes[i];
+    int prefix_len = (int)strlen(prefix);
 
+    // try adding this prefix to the method name and see if it matches another method name
+    int trial_len = name_len + prefix_len;
+    char* trial_name_str = NEW_RESOURCE_ARRAY(char, trial_len + 1);
+    strcpy(trial_name_str, prefix);
+    strcat(trial_name_str, name_str);
+    TempNewSymbol trial_name = SymbolTable::probe(trial_name_str, trial_len);
+    if (trial_name == NULL) {
+      continue; // no such symbol, so this prefix wasn't used, try the next prefix
+    }
+    method = k->lookup_method(trial_name, signature);
+    if (method == NULL) {
+      continue; // signature doesn't match, try the next prefix
+    }
+    if (method->is_native()) {
+      method->set_is_prefixed_native();
+      return method; // wahoo, we found a prefixed version of the method, return it
+    }
+    // found as non-native, so prefix is good, add it, probably just need more prefixes
+    name_len = trial_len;
+    name_str = trial_name_str;
+  }
+#endif // INCLUDE_JVMTI
+  return NULL; // not found
+}
+
+bool Method::register_native(Klass* k, Symbol* name, Symbol* signature, address entry, TRAPS) {
+  Method* method = k->lookup_method(name, signature);
+  if (method == NULL) {
+    ResourceMark rm(THREAD);
+    stringStream st;
+    st.print("Method '");
+    print_external_name(&st, k, name, signature);
+    st.print("' name or signature does not match");
+    THROW_MSG_(vmSymbols::java_lang_NoSuchMethodError(), st.as_string(), false);
+  }
+  if (!method->is_native()) {
+    // trying to register to a non-native method, see if a JVM TI agent has added prefix(es)
+    method = find_prefixed_native(k, name, signature, THREAD);
+    if (method == NULL) {
+      ResourceMark rm(THREAD);
+      stringStream st;
+      st.print("Method '");
+      print_external_name(&st, k, name, signature);
+      st.print("' is not declared as native");
+      THROW_MSG_(vmSymbols::java_lang_NoSuchMethodError(), st.as_string(), false);
+    }
+  }
+
+  if (entry != NULL) {
+    method->set_native_function(entry, native_bind_event_is_interesting);
+  } else {
+    method->clear_native_function();
+  }
+  if (PrintJNIResolving) {
+    ResourceMark rm(THREAD);
+    tty->print_cr("[Registering JNI native method %s.%s]",
+      method->method_holder()->external_name(),
+      method->name()->as_C_string());
+  }
+  return true;
+}
 
 bool Method::was_executed_more_than(int n) {
   // Invocation counter is reset when the Method* is compiled.
@@ -825,12 +907,7 @@ void Method::clear_native_function() {
   set_native_function(
     SharedRuntime::native_method_throw_unsatisfied_link_error_entry(),
     !native_bind_event_is_interesting);
-  clear_code();
-}
-
-address Method::critical_native_function() {
-  methodHandle mh(this);
-  return NativeLookup::lookup_critical_entry(mh);
+  this->unlink_code();
 }
 
 
@@ -848,10 +925,7 @@ void Method::print_made_not_compilable(int comp_level, bool is_osr, bool report,
     if (comp_level == CompLevel_all) {
       tty->print("all levels ");
     } else {
-      tty->print("levels ");
-      for (int i = (int)CompLevel_none; i <= comp_level; i++) {
-        tty->print("%d ", i);
-      }
+      tty->print("level %d ", comp_level);
     }
     this->print_short_name(tty);
     int size = this->code_size();
@@ -949,8 +1023,7 @@ void Method::set_not_osr_compilable(const char* reason, int comp_level, bool rep
 }
 
 // Revert to using the interpreter and clear out the nmethod
-void Method::clear_code(bool acquire_lock /* = true */) {
-  MutexLocker pl(acquire_lock ? Patching_lock : NULL, Mutex::_no_safepoint_check_flag);
+void Method::clear_code() {
   // this may be NULL if c2i adapters have not been made yet
   // Only should happen at allocate time.
   if (adapter() == NULL) {
@@ -964,12 +1037,31 @@ void Method::clear_code(bool acquire_lock /* = true */) {
   _code = NULL;
 }
 
+void Method::unlink_code(CompiledMethod *compare) {
+  MutexLocker ml(CompiledMethod_lock->owned_by_self() ? NULL : CompiledMethod_lock, Mutex::_no_safepoint_check_flag);
+  // We need to check if either the _code or _from_compiled_code_entry_point
+  // refer to this nmethod because there is a race in setting these two fields
+  // in Method* as seen in bugid 4947125.
+  // If the vep() points to the zombie nmethod, the memory for the nmethod
+  // could be flushed and the compiler and vtable stubs could still call
+  // through it.
+  if (code() == compare ||
+      from_compiled_entry() == compare->verified_entry_point()) {
+    clear_code();
+  }
+}
+
+void Method::unlink_code() {
+  MutexLocker ml(CompiledMethod_lock->owned_by_self() ? NULL : CompiledMethod_lock, Mutex::_no_safepoint_check_flag);
+  clear_code();
+}
+
 #if INCLUDE_CDS
 // Called by class data sharing to remove any entry points (which are not shared)
 void Method::unlink_method() {
   _code = NULL;
 
-  assert(DumpSharedSpaces || DynamicDumpSharedSpaces, "dump time only");
+  Arguments::assert_is_dumping_archive();
   // Set the values to what they should be at run time. Note that
   // this Method can no longer be executed during dump time.
   _i2i_entry = Interpreter::entry_for_cds_method(this);
@@ -1190,7 +1282,7 @@ bool Method::check_code() const {
 
 // Install compiled code.  Instantly it can execute.
 void Method::set_code(const methodHandle& mh, CompiledMethod *code) {
-  MutexLocker pl(Patching_lock, Mutex::_no_safepoint_check_flag);
+  assert_lock_strong(CompiledMethod_lock);
   assert( code, "use clear_code to remove code" );
   assert( mh->check_code(), "" );
 
@@ -1926,7 +2018,6 @@ void BreakpointInfo::set(Method* method) {
   Thread *thread = Thread::current();
   *method->bcp_from(_bci) = Bytecodes::_breakpoint;
   method->incr_number_of_breakpoints(thread);
-  SystemDictionary::notice_modification();
   {
     // Deoptimize all dependents on this method
     HandleMark hm(thread);
@@ -2076,7 +2167,7 @@ class JNIMethodBlock : public CHeapObj<mtClass> {
 #endif // PRODUCT
 };
 
-// Something that can't be mistaken for an address or a markOop
+// Something that can't be mistaken for an address or a markWord
 Method* const JNIMethodBlock::_free_method = (Method*)55;
 
 JNIMethodBlockNode::JNIMethodBlockNode(int num_methods) : _top(0), _next(NULL) {

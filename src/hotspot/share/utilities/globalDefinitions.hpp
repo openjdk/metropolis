@@ -29,6 +29,9 @@
 #include "utilities/debug.hpp"
 #include "utilities/macros.hpp"
 
+// Get constants like JVM_T_CHAR and JVM_SIGNATURE_INT, before pulling in <jvm.h>.
+#include "classfile_constants.h"
+
 #include COMPILER_HEADER(utilities/globalDefinitions)
 
 // Defaults for macros that might be defined per compiler.
@@ -308,6 +311,13 @@ inline size_t byte_size_in_exact_unit(size_t s) {
   return s;
 }
 
+// Memory size transition formatting.
+
+#define HEAP_CHANGE_FORMAT "%s: " SIZE_FORMAT "K(" SIZE_FORMAT "K)->" SIZE_FORMAT "K(" SIZE_FORMAT "K)"
+
+#define HEAP_CHANGE_FORMAT_ARGS(_name_, _prev_used_, _prev_capacity_, _used_, _capacity_) \
+  (_name_), (_prev_used_) / K, (_prev_capacity_) / K, (_used_) / K, (_capacity_) / K
+
 //----------------------------------------------------------------------------------------------------
 // VM type definitions
 
@@ -474,10 +484,13 @@ const  uint64_t KlassEncodingMetaspaceMax = (uint64_t(max_juint) + 1) << LogKlas
 // assure their ordering, instead of after volatile stores.
 // (See "A Tutorial Introduction to the ARM and POWER Relaxed Memory Models"
 // by Luc Maranget, Susmit Sarkar and Peter Sewell, INRIA/Cambridge)
-#ifdef CPU_NOT_MULTIPLE_COPY_ATOMIC
-const bool support_IRIW_for_not_multiple_copy_atomic_cpu = true;
-#else
+#ifdef CPU_MULTI_COPY_ATOMIC
+// Not needed.
 const bool support_IRIW_for_not_multiple_copy_atomic_cpu = false;
+#else
+// From all non-multi-copy-atomic architectures, only PPC64 supports IRIW at the moment.
+// Final decision is subject to JEP 188: Java Memory Model Update.
+const bool support_IRIW_for_not_multiple_copy_atomic_cpu = PPC64_ONLY(true) NOT_PPC64(false);
 #endif
 
 // The expected size in bytes of a cache line, used to pad data structures.
@@ -560,14 +573,22 @@ void basic_types_init(); // cannot define here; uses assert
 
 // NOTE: replicated in SA in vm/agent/sun/jvm/hotspot/runtime/BasicType.java
 enum BasicType {
-  T_BOOLEAN     =  4,
-  T_CHAR        =  5,
-  T_FLOAT       =  6,
-  T_DOUBLE      =  7,
-  T_BYTE        =  8,
-  T_SHORT       =  9,
-  T_INT         = 10,
-  T_LONG        = 11,
+// The values T_BOOLEAN..T_LONG (4..11) are derived from the JVMS.
+  T_BOOLEAN     = JVM_T_BOOLEAN,
+  T_CHAR        = JVM_T_CHAR,
+  T_FLOAT       = JVM_T_FLOAT,
+  T_DOUBLE      = JVM_T_DOUBLE,
+  T_BYTE        = JVM_T_BYTE,
+  T_SHORT       = JVM_T_SHORT,
+  T_INT         = JVM_T_INT,
+  T_LONG        = JVM_T_LONG,
+  // The remaining values are not part of any standard.
+  // T_OBJECT and T_VOID denote two more semantic choices
+  // for method return values.
+  // T_OBJECT and T_ARRAY describe signature syntax.
+  // T_ADDRESS, T_METADATA, T_NARROWOOP, T_NARROWKLASS describe
+  // internal references within the JVM as if they were Java
+  // types in their own right.
   T_OBJECT      = 12,
   T_ARRAY       = 13,
   T_VOID        = 14,
@@ -592,6 +613,10 @@ inline bool is_signed_subword_type(BasicType t) {
   return (t == T_BYTE || t == T_SHORT);
 }
 
+inline bool is_double_word_type(BasicType t) {
+  return (t == T_DOUBLE || t == T_LONG);
+}
+
 inline bool is_reference_type(BasicType t) {
   return (t == T_OBJECT || t == T_ARRAY);
 }
@@ -599,17 +624,17 @@ inline bool is_reference_type(BasicType t) {
 // Convert a char from a classfile signature to a BasicType
 inline BasicType char2type(char c) {
   switch( c ) {
-  case 'B': return T_BYTE;
-  case 'C': return T_CHAR;
-  case 'D': return T_DOUBLE;
-  case 'F': return T_FLOAT;
-  case 'I': return T_INT;
-  case 'J': return T_LONG;
-  case 'S': return T_SHORT;
-  case 'Z': return T_BOOLEAN;
-  case 'V': return T_VOID;
-  case 'L': return T_OBJECT;
-  case '[': return T_ARRAY;
+  case JVM_SIGNATURE_BYTE:    return T_BYTE;
+  case JVM_SIGNATURE_CHAR:    return T_CHAR;
+  case JVM_SIGNATURE_DOUBLE:  return T_DOUBLE;
+  case JVM_SIGNATURE_FLOAT:   return T_FLOAT;
+  case JVM_SIGNATURE_INT:     return T_INT;
+  case JVM_SIGNATURE_LONG:    return T_LONG;
+  case JVM_SIGNATURE_SHORT:   return T_SHORT;
+  case JVM_SIGNATURE_BOOLEAN: return T_BOOLEAN;
+  case JVM_SIGNATURE_VOID:    return T_VOID;
+  case JVM_SIGNATURE_CLASS:   return T_OBJECT;
+  case JVM_SIGNATURE_ARRAY:   return T_ARRAY;
   }
   return T_ILLEGAL;
 }

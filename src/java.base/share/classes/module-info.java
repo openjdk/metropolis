@@ -96,7 +96,6 @@ module java.base {
     exports java.nio.file.attribute;
     exports java.nio.file.spi;
     exports java.security;
-    exports java.security.acl;
     exports java.security.cert;
     exports java.security.interfaces;
     exports java.security.spec;
@@ -136,7 +135,8 @@ module java.base {
     exports com.sun.security.ntlm to
         java.security.sasl;
     exports jdk.internal to
-        jdk.jfr;
+        jdk.jfr,
+        jdk.compiler;
     exports jdk.internal.access to
         java.desktop,
         java.logging,
@@ -193,6 +193,7 @@ module java.base {
         jdk.compiler,
         jdk.jfr,
         jdk.jshell,
+        jdk.nio.mapmode,
         jdk.scripting.nashorn,
         jdk.scripting.nashorn.shell,
         jdk.unsupported,

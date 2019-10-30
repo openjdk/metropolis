@@ -76,9 +76,6 @@
 #include "utilities/align.hpp"
 #include "utilities/copy.hpp"
 #include "utilities/macros.hpp"
-#if INCLUDE_ZGC
-#include "gc/z/c2/zBarrierSetC2.hpp"
-#endif
 
 
 // -------------------- Compile::mach_constant_base_node -----------------------
@@ -465,7 +462,6 @@ CompileWrapper::CompileWrapper(Compile* compile) : _compile(compile) {
   compile->set_type_dict(NULL);
   compile->set_clone_map(new Dict(cmpkey, hashkey, _compile->comp_arena()));
   compile->clone_map().set_clone_idx(0);
-  compile->set_type_hwm(NULL);
   compile->set_type_last_size(0);
   compile->set_last_tf(NULL, NULL);
   compile->set_indexSet_arena(NULL);
@@ -991,6 +987,7 @@ Compile::Compile( ciEnv* ci_env,
     _has_method_handle_invokes(false),
     _clinit_barrier_on_entry(false),
     _comp_arena(mtCompiler),
+    _barrier_set_state(BarrierSet::barrier_set()->barrier_set_c2()->create_barrier_state(comp_arena())),
     _env(ci_env),
     _directive(directive),
     _log(ci_env->log()),
@@ -2413,13 +2410,6 @@ void Compile::Optimize() {
     print_method(PHASE_MACRO_EXPANSION, 2);
   }
 
-#ifdef ASSERT
-  bs->verify_gc_barriers(this, BarrierSetC2::BeforeLateInsertion);
-#endif
-
-  bs->barrier_insertion_phase(C, igvn);
-  if (failing())  return;
-
   {
     TracePhase tp("barrierExpand", &timers[_t_barrierExpand]);
     if (bs->expand_barriers(this, igvn)) {
@@ -3472,7 +3462,7 @@ void Compile::final_graph_reshaping_main_switch(Node* n, Final_Reshape_Counts& f
       // address computations.
       n->as_Type()->set_type(TypeLong::INT);
       ResourceMark rm;
-      Node_List wq;
+      Unique_Node_List wq;
       wq.push(n);
       for (uint next = 0; next < wq.size(); next++) {
         Node *m = wq.at(next);
@@ -3487,7 +3477,6 @@ void Compile::final_graph_reshaping_main_switch(Node* n, Final_Reshape_Counts& f
           // redundant
           for (DUIterator_Fast imax, i = k->fast_outs(imax); i < imax; i++) {
             Node* u = k->fast_out(i);
-            assert(!wq.contains(u), "shouldn't process one node several times");
             if (u->Opcode() == Op_LShiftL ||
                 u->Opcode() == Op_AddL ||
                 u->Opcode() == Op_SubL ||

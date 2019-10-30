@@ -346,6 +346,12 @@ class Method : public Metadata {
   // InterpreterRuntime::exception_handler_for_exception.
   static int fast_exception_handler_bci_for(const methodHandle& mh, Klass* ex_klass, int throw_bci, TRAPS);
 
+  static bool register_native(Klass* k,
+                              Symbol* name,
+                              Symbol* signature,
+                              address entry,
+                              TRAPS);
+
   // method data access
   MethodData* method_data() const              {
     return _method_data;
@@ -463,7 +469,17 @@ class Method : public Metadata {
   address verified_code_entry();
   bool check_code() const;      // Not inline to avoid circular ref
   CompiledMethod* volatile code() const;
-  void clear_code(bool acquire_lock = true);    // Clear out any compiled code
+
+  // Locks CompiledMethod_lock if not held.
+  void unlink_code(CompiledMethod *compare);
+  // Locks CompiledMethod_lock if not held.
+  void unlink_code();
+
+private:
+  // Either called with CompiledMethod_lock held or from constructor.
+  void clear_code();
+
+public:
   static void set_code(const methodHandle& mh, CompiledMethod* code);
   void set_adapter_entry(AdapterHandlerEntry* adapter) {
     constMethod()->set_adapter_entry(adapter);
@@ -533,7 +549,6 @@ class Method : public Metadata {
     native_bind_event_is_interesting = true
   };
   address native_function() const                { return *(native_function_addr()); }
-  address critical_native_function();
 
   // Must specify a real function (not NULL).
   // Use clear_native_function() to unregister.
@@ -594,7 +609,7 @@ class Method : public Metadata {
   void compute_size_of_parameters(Thread *thread); // word size of parameters (receiver if any + arguments)
   Symbol* klass_name() const;                    // returns the name of the method holder
   BasicType result_type() const;                 // type of the method result
-  bool is_returning_oop() const                  { BasicType r = result_type(); return (r == T_OBJECT || r == T_ARRAY); }
+  bool is_returning_oop() const                  { BasicType r = result_type(); return is_reference_type(r); }
   bool is_returning_fp() const                   { BasicType r = result_type(); return (r == T_FLOAT || r == T_DOUBLE); }
 
   // Checked exceptions thrown by this method (resolved to mirrors)
@@ -996,6 +1011,8 @@ class Method : public Metadata {
 
   // Deallocation function for redefine classes or if an error occurs
   void deallocate_contents(ClassLoaderData* loader_data);
+
+  void release_C_heap_structures();
 
   Method* get_new_method() const {
     InstanceKlass* holder = method_holder();

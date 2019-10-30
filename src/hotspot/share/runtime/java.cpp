@@ -56,7 +56,6 @@
 #include "prims/jvmtiExport.hpp"
 #include "runtime/arguments.hpp"
 #include "runtime/biasedLocking.hpp"
-#include "runtime/compilationPolicy.hpp"
 #include "runtime/deoptimization.hpp"
 #include "runtime/flags/flagSetting.hpp"
 #include "runtime/handles.inline.hpp"
@@ -203,9 +202,6 @@ void print_bytecode_count() {
   }
 }
 
-AllocStats alloc_stats;
-
-
 
 // General statistics printing (profiling ...)
 void print_statistics() {
@@ -329,11 +325,6 @@ void print_statistics() {
   }
 
   print_bytecode_count();
-  if (PrintMallocStatistics) {
-    tty->print("allocation stats: ");
-    alloc_stats.print();
-    tty->cr();
-  }
 
   if (PrintSystemDictionaryAtExit) {
     ResourceMark rm;
@@ -699,6 +690,8 @@ void vm_shutdown_during_initialization(const char* error, const char* message) {
 JDK_Version JDK_Version::_current;
 const char* JDK_Version::_runtime_name;
 const char* JDK_Version::_runtime_version;
+const char* JDK_Version::_runtime_vendor_version;
+const char* JDK_Version::_runtime_vendor_vm_bug_url;
 
 void JDK_Version::initialize() {
   jdk_version_info info;

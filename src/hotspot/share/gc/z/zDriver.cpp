@@ -87,8 +87,8 @@ public:
     GCIdMark gc_id_mark(_gc_id);
     IsGCActiveMark gc_active_mark;
 
-    // Verify roots
-    ZVerify::roots_strong();
+    // Verify before operation
+    ZVerify::before_zoperation();
 
     // Execute operation
     _success = do_operation();
@@ -211,6 +211,17 @@ public:
   }
 };
 
+class VM_ZVerify : public VM_Operation {
+public:
+  virtual VMOp_Type type() const {
+    return VMOp_ZVerify;
+  }
+
+  virtual void doit() {
+    ZVerify::after_weak_processing();
+  }
+};
+
 ZDriver::ZDriver() :
     _gc_cycle_port(),
     _gc_locker_port() {
@@ -239,9 +250,15 @@ void ZDriver::collect(GCCause::Cause cause) {
   case GCCause::_z_allocation_stall:
   case GCCause::_z_proactive:
   case GCCause::_z_high_usage:
-  case GCCause::_metadata_GC_threshold:
     // Start asynchronous GC
     _gc_cycle_port.send_async(cause);
+    break;
+
+  case GCCause::_metadata_GC_threshold:
+    // Start asynchronous GC, but only if the GC is warm
+    if (ZStatCycle::is_warm()) {
+      _gc_cycle_port.send_async(cause);
+    }
     break;
 
   case GCCause::_gc_locker:
@@ -308,10 +325,9 @@ void ZDriver::pause_verify() {
     // Full verification
     VM_Verify op;
     VMThread::execute(&op);
-
   } else if (ZVerifyRoots || ZVerifyObjects) {
     // Limited verification
-    VM_ZVerifyOperation op;
+    VM_ZVerify op;
     VMThread::execute(&op);
   }
 }

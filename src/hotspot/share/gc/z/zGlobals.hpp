@@ -26,7 +26,7 @@
 
 #include "utilities/globalDefinitions.hpp"
 #include "utilities/macros.hpp"
-#include OS_CPU_HEADER(gc/z/zGlobals)
+#include CPU_HEADER(gc/z/zGlobals)
 
 // Collector name
 const char* const ZName                         = "The Z Garbage Collector";
@@ -44,9 +44,22 @@ extern uint32_t   ZGlobalSeqNum;
 const size_t      ZGranuleSizeShift             = ZPlatformGranuleSizeShift;
 const size_t      ZGranuleSize                  = (size_t)1 << ZGranuleSizeShift;
 
-// Max heap size shift/size
-const size_t      ZMaxHeapSizeShift             = ZPlatformMaxHeapSizeShift;
-const size_t      ZMaxHeapSize                  = (size_t)1 << ZMaxHeapSizeShift;
+// Number of heap views
+const size_t      ZHeapViews                    = ZPlatformHeapViews;
+
+// Virtual memory to physical memory ratio
+const size_t      ZVirtualToPhysicalRatio       = 16; // 16:1
+
+//
+// Page Tiers (assuming ZGranuleSize=2M)
+// -------------------------------------
+//
+//                 Page Size        Object Size      Object Alignment
+//                 --------------------------------------------------
+//  Small          2M               <= 265K          MinObjAlignmentInBytes
+//  Medium         32M              <= 4M            4K
+//  Large          N x 2M           > 4M             2M
+//
 
 // Page types
 const uint8_t     ZPageTypeSmall                = 0;
@@ -112,21 +125,12 @@ extern uintptr_t  ZAddressMetadataMarked1;
 extern uintptr_t  ZAddressMetadataRemapped;
 extern uintptr_t  ZAddressMetadataFinalizable;
 
-// Address space start/end/size
-extern uintptr_t  ZAddressSpaceStart;
-extern uintptr_t  ZAddressSpaceEnd;
-extern size_t     ZAddressSpaceSize;
-
-// Reserved space start/end
-extern uintptr_t  ZAddressReservedStart;
-extern uintptr_t  ZAddressReservedEnd;
-extern size_t     ZAddressReservedSize;
-
 // NMethod entry barrier
 const size_t      ZNMethodDisarmedOffset        = ZPlatformNMethodDisarmedOffset;
 
 // Cache line size
 const size_t      ZCacheLineSize                = ZPlatformCacheLineSize;
+#define           ZCACHE_ALIGNED                ATTRIBUTE_ALIGNED(ZCacheLineSize)
 
 // Mark stack space
 extern uintptr_t  ZMarkStackSpaceStart;
