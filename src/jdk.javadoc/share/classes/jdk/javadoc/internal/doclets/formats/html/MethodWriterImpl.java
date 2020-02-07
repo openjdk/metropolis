@@ -53,11 +53,6 @@ import jdk.javadoc.internal.doclets.toolkit.util.VisibleMemberTable;
  *  If you write code that depends on this, you do so at your own risk.
  *  This code and its internal interfaces are subject to change or
  *  deletion without notice.</b>
- *
- * @author Robert Field
- * @author Atul M Dambalkar
- * @author Jamie Ho (rewrite)
- * @author Bhavesh Patel (Modified)
  */
 public class MethodWriterImpl extends AbstractExecutableMemberWriter
         implements MethodWriter, MemberSummaryWriter {
@@ -295,7 +290,7 @@ public class MethodWriterImpl extends AbstractExecutableMemberWriter
     @Override
     protected void addSummaryType(Element member, Content tdSummaryType) {
         ExecutableElement meth = (ExecutableElement)member;
-        addModifierAndType(meth, utils.getReturnType(meth), tdSummaryType);
+        addModifierAndType(meth, utils.getReturnType(typeElement, meth), tdSummaryType);
     }
 
     /**
@@ -391,7 +386,7 @@ public class MethodWriterImpl extends AbstractExecutableMemberWriter
      * @return content containing the return type
      */
     protected Content getReturnType(ExecutableElement method) {
-        TypeMirror type = utils.getReturnType(method);
+        TypeMirror type = utils.getReturnType(typeElement, method);
         if (type != null) {
             return writer.getLink(new LinkInfoImpl(configuration, LinkInfoImpl.Kind.RETURN_TYPE, type));
         }

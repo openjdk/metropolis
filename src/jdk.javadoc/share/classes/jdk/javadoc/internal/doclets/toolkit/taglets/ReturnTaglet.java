@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2001, 2018, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2001, 2019, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -50,8 +50,6 @@ import static com.sun.source.doctree.DocTree.Kind.RETURN;
  *  If you write code that depends on this, you do so at your own risk.
  *  This code and its internal interfaces are subject to change or
  *  deletion without notice.</b>
- *
- * @author Jamie Ho
  */
 public class ReturnTaglet extends BaseTaglet implements InheritableTaglet {
 
@@ -76,7 +74,7 @@ public class ReturnTaglet extends BaseTaglet implements InheritableTaglet {
     public Content getTagletOutput(Element holder, TagletWriter writer) {
         Messages messages = writer.configuration().getMessages();
         Utils utils = writer.configuration().utils;
-        TypeMirror returnType = utils.getReturnType((ExecutableElement)holder);
+        TypeMirror returnType = utils.getReturnType(writer.getCurrentPageElement(), (ExecutableElement)holder);
         List<? extends DocTree> tags = utils.getBlockTags(holder, name);
 
         //Make sure we are not using @return tag on method with void return type.

@@ -47,11 +47,6 @@ import jdk.javadoc.internal.doclets.toolkit.PropertyWriter;
  *  If you write code that depends on this, you do so at your own risk.
  *  This code and its internal interfaces are subject to change or
  *  deletion without notice.</b>
- *
- * @author Robert Field
- * @author Atul M Dambalkar
- * @author Jamie Ho (rewrite)
- * @author Bhavesh Patel (Modified)
  */
 public class PropertyWriterImpl extends AbstractMemberWriter
     implements PropertyWriter, MemberSummaryWriter {
@@ -114,7 +109,7 @@ public class PropertyWriterImpl extends AbstractMemberWriter
     @Override
     public Content getSignature(ExecutableElement property) {
         return new MemberSignature(property)
-                .addType(utils.getReturnType(property))
+                .addType(utils.getReturnType(typeElement, property))
                 .toContent();
     }
 
@@ -287,7 +282,7 @@ public class PropertyWriterImpl extends AbstractMemberWriter
      */
     @Override
     protected void addSummaryType(Element member, Content tdSummaryType) {
-        addModifierAndType(member, utils.getReturnType((ExecutableElement)member), tdSummaryType);
+        addModifierAndType(member, utils.getReturnType(typeElement, (ExecutableElement)member), tdSummaryType);
     }
 
     /**

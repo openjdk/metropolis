@@ -823,6 +823,7 @@ intptr_t* MetaspaceShared::fix_cpp_vtable_for_dynamic_archive(MetaspaceObj::Type
   case MetaspaceObj::ConstantPoolCacheType:
   case MetaspaceObj::AnnotationsType:
   case MetaspaceObj::MethodCountersType:
+  case MetaspaceObj::RecordComponentType:
     // These have no vtables.
     break;
   case MetaspaceObj::ClassType:
@@ -1773,7 +1774,7 @@ void MetaspaceShared::prepare_for_dumping() {
 // file.
 void MetaspaceShared::preload_and_dump(TRAPS) {
   { TraceTime timer("Dump Shared Spaces", TRACETIME_LOG(Info, startuptime));
-    ResourceMark rm;
+    ResourceMark rm(THREAD);
     char class_list_path_str[JVM_MAXPATHLEN];
     // Preload classes to be shared.
     const char* class_list_path;
@@ -1864,7 +1865,7 @@ int MetaspaceShared::preload_classes(const char* class_list_path, TRAPS) {
     }
     if (klass != NULL) {
       if (log_is_enabled(Trace, cds)) {
-        ResourceMark rm;
+        ResourceMark rm(THREAD);
         log_trace(cds)("Shared spaces preloaded: %s", klass->external_name());
       }
 
@@ -1903,7 +1904,7 @@ bool MetaspaceShared::try_link_class(InstanceKlass* ik, TRAPS) {
     }
     ik->link_class(THREAD);
     if (HAS_PENDING_EXCEPTION) {
-      ResourceMark rm;
+      ResourceMark rm(THREAD);
       log_warning(cds)("Preload Warning: Verification failed for %s",
                     ik->external_name());
       CLEAR_PENDING_EXCEPTION;
@@ -2051,6 +2052,7 @@ void MetaspaceShared::initialize_runtime_shared_and_meta_spaces() {
     if (result == MAP_ARCHIVE_MMAP_FAILURE) {
       // Mapping has failed (probably due to ASLR). Let's map at an address chosen
       // by the OS.
+      log_info(cds)("Try to map archive(s) at an alternative address");
       result = map_archives(static_mapinfo, dynamic_mapinfo, false);
     }
   }
@@ -2146,6 +2148,19 @@ MapArchiveResult MetaspaceShared::map_archives(FileMapInfo* static_mapinfo, File
     MapArchiveResult static_result = map_archive(static_mapinfo, mapped_base_address, archive_space_rs);
     MapArchiveResult dynamic_result = (static_result == MAP_ARCHIVE_SUCCESS) ?
                                      map_archive(dynamic_mapinfo, mapped_base_address, archive_space_rs) : MAP_ARCHIVE_OTHER_FAILURE;
+
+    DEBUG_ONLY(if (ArchiveRelocationMode == 1 && use_requested_addr) {
+      // This is for simulating mmap failures at the requested address. In debug builds, we do it
+      // here (after all archives have possibly been mapped), so we can thoroughly test the code for
+      // failure handling (releasing all allocated resource, etc).
+      log_info(cds)("ArchiveRelocationMode == 1: always map archive(s) at an alternative address");
+      if (static_result == MAP_ARCHIVE_SUCCESS) {
+        static_result = MAP_ARCHIVE_MMAP_FAILURE;
+      }
+      if (dynamic_result == MAP_ARCHIVE_SUCCESS) {
+        dynamic_result = MAP_ARCHIVE_MMAP_FAILURE;
+      }
+    });
 
     if (static_result == MAP_ARCHIVE_SUCCESS) {
       if (dynamic_result == MAP_ARCHIVE_SUCCESS) {
@@ -2298,7 +2313,7 @@ static int dynamic_regions_count = 3;
 MapArchiveResult MetaspaceShared::map_archive(FileMapInfo* mapinfo, char* mapped_base_address, ReservedSpace rs) {
   assert(UseSharedSpaces, "must be runtime");
   if (mapinfo == NULL) {
-    return MAP_ARCHIVE_SUCCESS; // no error has happeed -- trivially succeeded.
+    return MAP_ARCHIVE_SUCCESS; // The dynamic archive has not been specified. No error has happened -- trivially succeeded.
   }
 
   mapinfo->set_is_mapped(false);

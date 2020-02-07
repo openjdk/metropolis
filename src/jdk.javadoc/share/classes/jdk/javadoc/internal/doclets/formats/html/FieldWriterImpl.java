@@ -50,11 +50,6 @@ import jdk.javadoc.internal.doclets.toolkit.MemberSummaryWriter;
  *  If you write code that depends on this, you do so at your own risk.
  *  This code and its internal interfaces are subject to change or
  *  deletion without notice.</b>
- *
- * @author Robert Field
- * @author Atul M Dambalkar
- * @author Jamie Ho (rewrite)
- * @author Bhavesh Patel (Modified)
  */
 public class FieldWriterImpl extends AbstractMemberWriter
     implements FieldWriter, MemberSummaryWriter {
@@ -120,7 +115,7 @@ public class FieldWriterImpl extends AbstractMemberWriter
     @Override
     public Content getSignature(VariableElement field) {
         return new MemberSignature(field)
-                .addType(field.asType())
+                .addType(utils.asInstantiatedFieldType(typeElement, field))
                 .toContent();
     }
 
@@ -267,7 +262,7 @@ public class FieldWriterImpl extends AbstractMemberWriter
      */
     @Override
     protected void addSummaryType(Element member, Content tdSummaryType) {
-        addModifierAndType(member, member.asType(), tdSummaryType);
+        addModifierAndType(member, utils.asInstantiatedFieldType(typeElement, (VariableElement)member), tdSummaryType);
     }
 
     /**

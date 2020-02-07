@@ -48,9 +48,6 @@ import jdk.javadoc.internal.doclets.toolkit.MemberSummaryWriter;
  *  If you write code that depends on this, you do so at your own risk.
  *  This code and its internal interfaces are subject to change or
  *  deletion without notice.</b>
- *
- * @author Jamie Ho
- * @author Bhavesh Patel (Modified)
  */
 public class AnnotationTypeRequiredMemberWriterImpl extends AbstractMemberWriter
     implements AnnotationTypeRequiredMemberWriter, MemberSummaryWriter {
@@ -269,7 +266,7 @@ public class AnnotationTypeRequiredMemberWriterImpl extends AbstractMemberWriter
 
     private TypeMirror getType(Element member) {
         return utils.isExecutableElement(member)
-                ? utils.getReturnType((ExecutableElement) member)
+                ? utils.getReturnType(typeElement, (ExecutableElement) member)
                 : member.asType();
     }
 }

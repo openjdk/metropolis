@@ -47,8 +47,6 @@ import jdk.javadoc.internal.doclets.toolkit.MemberSummaryWriter;
  *  If you write code that depends on this, you do so at your own risk.
  *  This code and its internal interfaces are subject to change or
  *  deletion without notice.</b>
- *
- * @author Bhavesh Patel
  */
 public class AnnotationTypeFieldWriterImpl extends AbstractMemberWriter
     implements AnnotationTypeFieldWriter, MemberSummaryWriter {
@@ -266,7 +264,7 @@ public class AnnotationTypeFieldWriterImpl extends AbstractMemberWriter
         if (utils.isConstructor(member))
             return null;
         if (utils.isExecutableElement(member))
-            return utils.getReturnType((ExecutableElement)member);
+            return utils.getReturnType(typeElement, (ExecutableElement)member);
         return member.asType();
     }
 }
