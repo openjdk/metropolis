@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2009, 2018, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -59,6 +59,12 @@ public final class RawMonitorEnterNode extends AccessMonitorNode implements Virt
 
     public RawMonitorEnterNode(ValueNode object, ValueNode hub, MonitorIdNode monitorId) {
         super(TYPE, object, monitorId);
+        assert ((ObjectStamp) object.stamp(NodeView.DEFAULT)).nonNull();
+        this.hub = hub;
+    }
+
+    public RawMonitorEnterNode(ValueNode object, ValueNode hub, MonitorIdNode monitorId, boolean biasable) {
+        super(TYPE, object, monitorId, biasable);
         assert ((ObjectStamp) object.stamp(NodeView.DEFAULT)).nonNull();
         this.hub = hub;
     }

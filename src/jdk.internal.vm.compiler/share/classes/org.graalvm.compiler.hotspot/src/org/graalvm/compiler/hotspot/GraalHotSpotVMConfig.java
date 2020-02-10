@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -110,6 +110,7 @@ public class GraalHotSpotVMConfig extends GraalHotSpotVMConfigBase {
     private final boolean useSquareToLenIntrinsic = getFlag("UseSquareToLenIntrinsic", Boolean.class, false);
     public final boolean useVectorizedMismatchIntrinsic = getFlag("UseVectorizedMismatchIntrinsic", Boolean.class, false);
     public final boolean useFMAIntrinsics = getFlag("UseFMA", Boolean.class, false);
+    public final int useAVX3Threshold = getFlag("AVX3Threshold", Integer.class, 4096);
 
     public final boolean preserveFramePointer = getFlag("PreserveFramePointer", Boolean.class, false);
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2018, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -1035,6 +1035,17 @@ public abstract class AMD64BaseAssembler extends Assembler {
                     throw GraalError.shouldNotReachHere("Unsupported vector size.");
             }
         }
+    }
+
+    public static final class EVEXComparisonPredicate {
+        public static final int EQ = 0;
+        public static final int LT = 1;
+        public static final int LE = 2;
+        public static final int FALSE = 3;
+        public static final int NEQ = 4;
+        public static final int NLT = 5;
+        public static final int NLE = 6;
+        public static final int TRUE = 7;
     }
 
  // @formatter:off

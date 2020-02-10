@@ -453,6 +453,7 @@ jdk.internal.vm.compiler_ADD_JAVAC_FLAGS += -parameters -XDstringConcat=inline \
 
 jdk.internal.vm.compiler_EXCLUDES += \
     jdk.internal.vm.compiler.collections.test \
+    jdk.internal.vm.compiler.nativeimage.test \
     jdk.tools.jaotc.test \
     org.graalvm.compiler.api.directives.test \
     org.graalvm.compiler.api.test \
