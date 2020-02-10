@@ -79,30 +79,14 @@ public abstract class AccessMonitorNode extends AbstractMemoryCheckpoint impleme
         return monitorId;
     }
 
-    public void disableBiasedLocking() {
-        this.biasable = false;
-    }
-
-    public boolean isBiasable() {
-        return biasable;
-    }
-
-    protected boolean biasable = true;
-
     /**
      * Creates a new AccessMonitor instruction.
      *
      * @param object the instruction producing the object
      */
-    protected AccessMonitorNode(NodeClass<? extends AccessMonitorNode> c, ValueNode object, MonitorIdNode monitorId, boolean biasable) {
+    protected AccessMonitorNode(NodeClass<? extends AccessMonitorNode> c, ValueNode object, MonitorIdNode monitorId) {
         super(c, StampFactory.forVoid());
         this.object = object;
         this.monitorId = monitorId;
-        this.biasable = biasable;
     }
-
-    protected AccessMonitorNode(NodeClass<? extends AccessMonitorNode> c, ValueNode object, MonitorIdNode monitorId) {
-        this(c, object, monitorId, true);
-    }
-
 }

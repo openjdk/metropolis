@@ -31,6 +31,7 @@ import org.graalvm.compiler.core.common.calc.CanonicalCondition;
 import org.graalvm.compiler.core.common.type.ArithmeticOpTable;
 import org.graalvm.compiler.core.common.type.ArithmeticOpTable.IntegerConvertOp;
 import org.graalvm.compiler.core.common.type.ArithmeticOpTable.IntegerConvertOp.Narrow;
+import org.graalvm.compiler.core.common.type.ArithmeticOpTable.IntegerConvertOp.SignExtend;
 import org.graalvm.compiler.core.common.type.IntegerStamp;
 import org.graalvm.compiler.core.common.type.PrimitiveStamp;
 import org.graalvm.compiler.core.common.type.Stamp;
@@ -48,7 +49,7 @@ import jdk.vm.ci.code.CodeUtil;
  * The {@code NarrowNode} converts an integer to a narrower integer.
  */
 @NodeInfo(cycles = CYCLES_1)
-public final class NarrowNode extends IntegerConvertNode<Narrow, IntegerConvertOp.ZeroExtend> {
+public final class NarrowNode extends IntegerConvertNode<Narrow, SignExtend> {
 
     public static final NodeClass<NarrowNode> TYPE = NodeClass.create(NarrowNode.class);
 
@@ -81,8 +82,8 @@ public final class NarrowNode extends IntegerConvertNode<Narrow, IntegerConvertO
     }
 
     @Override
-    protected IntegerConvertOp<IntegerConvertOp.ZeroExtend> getReverseOp(ArithmeticOpTable table) {
-        return table.getZeroExtend();
+    protected IntegerConvertOp<SignExtend> getReverseOp(ArithmeticOpTable table) {
+        return table.getSignExtend();
     }
 
     @Override

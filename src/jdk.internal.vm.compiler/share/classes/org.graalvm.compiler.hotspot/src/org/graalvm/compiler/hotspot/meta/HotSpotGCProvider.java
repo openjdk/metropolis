@@ -27,7 +27,6 @@ package org.graalvm.compiler.hotspot.meta;
 import org.graalvm.compiler.debug.DebugContext;
 import org.graalvm.compiler.graph.Node;
 import org.graalvm.compiler.hotspot.GraalHotSpotVMConfig;
-import org.graalvm.compiler.hotspot.replacements.HotSpotReplacementsUtil;
 import org.graalvm.compiler.nodes.ValueNode;
 import org.graalvm.compiler.nodes.gc.BarrierSet;
 import org.graalvm.compiler.nodes.gc.CardTableBarrierSet;
@@ -37,7 +36,6 @@ import org.graalvm.compiler.nodes.memory.FixedAccessNode;
 import org.graalvm.compiler.nodes.spi.GCProvider;
 
 import jdk.vm.ci.meta.MetaAccessProvider;
-import jdk.vm.ci.meta.ResolvedJavaType;
 
 public class HotSpotGCProvider implements GCProvider {
     private final BarrierSet barrierSet;
@@ -54,9 +52,7 @@ public class HotSpotGCProvider implements GCProvider {
     private BarrierSet createBarrierSet(GraalHotSpotVMConfig config, MetaAccessProvider metaAccess) {
         boolean useDeferredInitBarriers = config.useDeferredInitBarriers;
         if (config.useG1GC) {
-            ResolvedJavaType referenceType = HotSpotReplacementsUtil.referenceType(metaAccess);
-            long referentOffset = HotSpotReplacementsUtil.referentOffset(metaAccess);
-            return new G1BarrierSet(referenceType, referentOffset) {
+            return new G1BarrierSet(metaAccess) {
                 @Override
                 protected boolean writeRequiresPostBarrier(FixedAccessNode initializingWrite, ValueNode writtenValue) {
                     if (!super.writeRequiresPostBarrier(initializingWrite, writtenValue)) {

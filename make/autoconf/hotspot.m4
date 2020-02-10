@@ -25,7 +25,7 @@
 
 # All valid JVM features, regardless of platform
 VALID_JVM_FEATURES="compiler1 compiler2 zero minimal dtrace jvmti jvmci \
-    graal libgraal vm-structs jni-check services management epsilongc g1gc parallelgc serialgc shenandoahgc zgc nmt cds \
+    graal vm-structs jni-check services management epsilongc g1gc parallelgc serialgc shenandoahgc zgc nmt cds \
     static-build link-time-opt aot jfr"
 
 # Deprecated JVM features (these are ignored, but with a warning)
@@ -496,45 +496,6 @@ AC_DEFUN_ONCE([HOTSPOT_SETUP_JVM_FEATURES],
   fi
 
   AC_SUBST(ENABLE_AOT)
-
-  AC_MSG_CHECKING([if libjvmcicompiler.so (libgraal) should be included])
-  # Check if libgraal is disabled
-  if HOTSPOT_IS_JVM_FEATURE_DISABLED(libgraal); then
-    AC_MSG_RESULT([no, forced])
-    JVM_FEATURES_libgraal=""
-    INCLUDE_LIBGRAAL="false"
-  else
-    if HOTSPOT_CHECK_JVM_FEATURE(libgraal); then
-      AC_MSG_RESULT([yes, forced])
-      if test ! -e "${TOPDIR}/src/jdk.internal.vm.compiler/libjvmcicompiler.so" ; then
-        AC_MSG_ERROR([Specified JVM feature 'libgraal' requires presence of 'src/jdk.internal.vm.compiler/libjvmcicompiler.so'])
-      fi
-      if test "x$OPENJDK_TARGET_OS" != xlinux || test "x$OPENJDK_TARGET_CPU" != "xx86_64" ; then
-        AC_MSG_ERROR([Specified JVM feature 'libgraal' is available only on linux-x64'])
-      fi
-      if test "x$JVM_FEATURES_graal" != "xgraal" ; then
-        AC_MSG_ERROR([Specified JVM feature 'libgraal' requires feature 'graal'])
-      fi
-      JVM_FEATURES_libgraal="libgraal"
-      INCLUDE_LIBGRAAL="true"
-    else
-      # By default enable libgraal on linux-x64 when graal is enabled.
-      if test "x$JVM_FEATURES_graal" = "xgraal" && \
-         test "x$OPENJDK_TARGET_CPU" = "xx86_64" && \
-         test "x$OPENJDK_TARGET_OS" = "xlinux" && \
-         test -e "${TOPDIR}/src/jdk.internal.vm.compiler/libjvmcicompiler.so" ; then
-        AC_MSG_RESULT([yes])
-        JVM_FEATURES_libgraal="libgraal"
-        INCLUDE_LIBGRAAL="true"
-      else
-        AC_MSG_RESULT([no])
-        JVM_FEATURES_libgraal=""
-        INCLUDE_LIBGRAAL="false"
-      fi
-    fi
-  fi
-
-  AC_SUBST(INCLUDE_LIBGRAAL)
 
   if test "x$OPENJDK_TARGET_CPU" = xarm ; then
     # Default to use link time optimizations on minimal on arm

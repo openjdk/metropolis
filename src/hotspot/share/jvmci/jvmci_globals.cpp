@@ -28,18 +28,9 @@
 #include "gc/shared/gcConfig.hpp"
 #include "utilities/defaultStream.hpp"
 #include "utilities/ostream.hpp"
-#include "runtime/arguments.hpp"
 #include "runtime/globals_extension.hpp"
 
 fileStream* JVMCIGlobals::_jni_config_file = NULL;
-
-static bool supported_gc() {
-  return (UseSerialGC || UseParallelGC || UseParallelOldGC || UseG1GC);
-}
-
-static bool unsupported_properties() {
-  return Arguments::get_property("jdk.module.limitmods") != NULL;
-}
 
 // Return true if jvmci flags are consistent.
 bool JVMCIGlobals::check_jvmci_flags_are_consistent() {
@@ -77,30 +68,29 @@ bool JVMCIGlobals::check_jvmci_flags_are_consistent() {
   JVMCI_FLAG_CHECKED(EnableJVMCI)
   JVMCI_FLAG_CHECKED(EnableJVMCIProduct)
 
-  if (!FLAG_IS_DEFAULT(EnableJVMCI) && !EnableJVMCI) {
-    // JVMCI is switched off on command line.
-    FLAG_SET_DEFAULT(UseJVMCICompiler, false);
-  } else {
-#ifdef LINUX // Only on linux for now.
-    if ((UseJVMCICompiler || FLAG_IS_DEFAULT(UseJVMCICompiler)) &&
-        !unsupported_properties() &&
-        FLAG_IS_DEFAULT(UseJVMCINativeLibrary) && !UseJVMCINativeLibrary) {
+  CHECK_NOT_SET(BootstrapJVMCI,   UseJVMCICompiler)
+  CHECK_NOT_SET(PrintBootstrap,   UseJVMCICompiler)
+  CHECK_NOT_SET(JVMCIThreads,     UseJVMCICompiler)
+  CHECK_NOT_SET(JVMCIHostThreads, UseJVMCICompiler)
+
+  if (UseJVMCICompiler) {
+    if (FLAG_IS_DEFAULT(UseJVMCINativeLibrary) && !UseJVMCINativeLibrary) {
       char path[JVM_MAXPATHLEN];
       if (os::dll_locate_lib(path, sizeof(path), Arguments::get_dll_dir(), JVMCI_SHARED_LIBRARY_NAME)) {
         // If a JVMCI native library is present,
         // we enable UseJVMCINativeLibrary by default.
         FLAG_SET_DEFAULT(UseJVMCINativeLibrary, true);
-        FLAG_SET_DEFAULT(UseJVMCICompiler, true);
       }
     }
-#endif
-    if (UseJVMCICompiler) {
-      FLAG_SET_DEFAULT(EnableJVMCI, true);
-      if (BootstrapJVMCI && UseJVMCINativeLibrary) {
-        FLAG_SET_DEFAULT(UseJVMCINativeLibrary, false);
-        jio_fprintf(defaultStream::error_stream(), "-XX:+BootstrapJVMCI is not compatible with -XX:+UseJVMCINativeLibrary\n");
-        return false;
-      }
+    if (!FLAG_IS_DEFAULT(EnableJVMCI) && !EnableJVMCI) {
+      jio_fprintf(defaultStream::error_stream(),
+          "Improperly specified VM option UseJVMCICompiler: EnableJVMCI cannot be disabled\n");
+      return false;
+    }
+    FLAG_SET_DEFAULT(EnableJVMCI, true);
+    if (BootstrapJVMCI && UseJVMCINativeLibrary) {
+      jio_fprintf(defaultStream::error_stream(), "-XX:+BootstrapJVMCI is not compatible with -XX:+UseJVMCINativeLibrary\n");
+      return false;
     }
   }
 
@@ -112,11 +102,6 @@ bool JVMCIGlobals::check_jvmci_flags_are_consistent() {
     }
   }
   JVMCI_FLAG_CHECKED(EagerJVMCI)
-
-  CHECK_NOT_SET(BootstrapJVMCI,   UseJVMCICompiler)
-  CHECK_NOT_SET(PrintBootstrap,   UseJVMCICompiler)
-  CHECK_NOT_SET(JVMCIThreads,     UseJVMCICompiler)
-  CHECK_NOT_SET(JVMCIHostThreads, UseJVMCICompiler)
 
   CHECK_NOT_SET(JVMCITraceLevel,              EnableJVMCI)
   CHECK_NOT_SET(JVMCICounterSize,             EnableJVMCI)
@@ -209,13 +194,10 @@ bool JVMCIGlobals::enable_jvmci_product_mode(JVMFlag::Flags origin) {
 void JVMCIGlobals::check_jvmci_supported_gc() {
   if (EnableJVMCI) {
     // Check if selected GC is supported by JVMCI and Java compiler
-    if (!supported_gc()) {
-      if (FLAG_IS_DEFAULT(UseJVMCINativeLibrary) && !UseJVMCINativeLibrary) { // Just disable Graal when libgraal is present
-        vm_exit_during_initialization("JVMCI Compiler does not support selected GC", GCConfig::hs_err_name());
-      }
+    if (!(UseSerialGC || UseParallelGC || UseParallelOldGC || UseG1GC)) {
+      vm_exit_during_initialization("JVMCI Compiler does not support selected GC", GCConfig::hs_err_name());
       FLAG_SET_DEFAULT(EnableJVMCI, false);
       FLAG_SET_DEFAULT(UseJVMCICompiler, false);
-      FLAG_SET_DEFAULT(UseJVMCINativeLibrary, false);
     }
   }
 }

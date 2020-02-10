@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, 2020, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2014, 2018, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -32,6 +32,7 @@ import org.graalvm.compiler.word.Word;
 import org.graalvm.compiler.word.Word.Opcode;
 import org.graalvm.compiler.word.Word.Operation;
 import jdk.internal.vm.compiler.word.LocationIdentity;
+import jdk.internal.vm.compiler.word.Pointer;
 import jdk.internal.vm.compiler.word.SignedWord;
 import jdk.internal.vm.compiler.word.UnsignedWord;
 import jdk.internal.vm.compiler.word.WordBase;
@@ -45,7 +46,7 @@ public abstract class MetaspacePointer {
     public abstract boolean isNull();
 
     @HotSpotOperation(opcode = FROM_POINTER)
-    public abstract Word asWord();
+    public abstract Pointer asWord();
 
     /**
      * Reads the memory at address {@code (this + offset)}. Both the base address and offset are in

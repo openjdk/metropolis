@@ -1263,13 +1263,9 @@ public class AMD64ArithmeticLIRGenerator extends ArithmeticLIRGenerator implemen
         }
     }
 
-    public boolean mustReplaceNullWithNullRegister(Constant nullConstant) {
+    private boolean mustReplaceNullWithNullRegister(Constant nullConstant) {
         /* Uncompressed null pointers only */
         return nullRegisterValue != null && JavaConstant.NULL_POINTER.equals(nullConstant);
-    }
-
-    public AllocatableValue getNullRegisterValue() {
-        return nullRegisterValue;
     }
 
     @Override

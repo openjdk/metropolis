@@ -22,7 +22,7 @@
  */
 
 
-package org.graalvm.compiler.replacements;
+package org.graalvm.compiler.hotspot.nodes;
 
 import static org.graalvm.compiler.core.common.NumUtil.roundUp;
 import static org.graalvm.compiler.nodeinfo.NodeCycles.CYCLES_2;

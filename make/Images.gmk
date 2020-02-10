@@ -142,29 +142,6 @@ ifeq ($(BUILD_CDS_ARCHIVE), true)
 endif
 
 ################################################################################
-# Copy libjvmcicompiler.so on linux-x64 during JDK build after CDS archive
-ifneq ($(filter jdk, $(MAKECMDGOALS)), )
-  ifeq ($(INCLUDE_LIBGRAAL), true)
-
-    ifeq ($(BUILD_CDS_ARCHIVE), true)
-      CP_DEP := $(gen_cds_archive_jdk)
-    else
-      CP_DEP := $(jlink_jdk)
-    endif
-
-    $(eval $(call SetupExecute, JDK_COPY_LIBGRAAL, \
-        WARN := Copying libjvmcicompiler.so to jdk image, \
-        DEPS := $(CP_DEP), \
-        OUTPUT_FILE := $(JDK_IMAGE_DIR)/lib/libjvmcicompiler.so, \
-        SUPPORT_DIR := $(SUPPORT_OUTPUTDIR)/images/jdk, \
-        COMMAND := $(CP) -f $(TOPDIR)/src/jdk.internal.vm.compiler/libjvmcicompiler.so $(JDK_IMAGE_DIR)/lib/, \
-    ))
-
-    JDK_TARGETS += $(JDK_COPY_LIBGRAAL)
-  endif
-endif
-
-################################################################################
 # src.zip
 
 $(JDK_IMAGE_DIR)/lib/src.zip: $(SUPPORT_OUTPUTDIR)/src.zip

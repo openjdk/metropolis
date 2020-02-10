@@ -25,6 +25,8 @@
 
 package org.graalvm.compiler.nodes.gc;
 
+import java.lang.ref.Reference;
+
 import org.graalvm.compiler.core.common.type.AbstractObjectStamp;
 import org.graalvm.compiler.debug.GraalError;
 import org.graalvm.compiler.nodes.NodeView;
@@ -43,16 +45,27 @@ import org.graalvm.compiler.nodes.memory.address.AddressNode;
 import org.graalvm.compiler.nodes.type.StampTool;
 
 import jdk.vm.ci.meta.JavaKind;
+import jdk.vm.ci.meta.MetaAccessProvider;
+import jdk.vm.ci.meta.ResolvedJavaField;
 import jdk.vm.ci.meta.ResolvedJavaType;
 
 public class G1BarrierSet implements BarrierSet {
 
-    private final ResolvedJavaType referenceType;
     private final long referentFieldOffset;
+    private final ResolvedJavaType referenceType;
 
-    public G1BarrierSet(ResolvedJavaType referenceType, long referentFieldOffset) {
-        this.referenceType = referenceType;
-        this.referentFieldOffset = referentFieldOffset;
+    public G1BarrierSet(MetaAccessProvider metaAccess) {
+        this.referenceType = metaAccess.lookupJavaType(Reference.class);
+        int offset = -1;
+        for (ResolvedJavaField field : referenceType.getInstanceFields(true)) {
+            if (field.getName().equals("referent")) {
+                offset = field.getOffset();
+            }
+        }
+        if (offset == 1) {
+            throw new GraalError("Can't find Reference.referent field");
+        }
+        this.referentFieldOffset = offset;
     }
 
     @Override

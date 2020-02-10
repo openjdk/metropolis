@@ -30,6 +30,7 @@ import static org.graalvm.compiler.debug.DebugContext.NO_DESCRIPTION;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.io.PrintWriter;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
@@ -51,7 +52,6 @@ import org.graalvm.compiler.debug.DebugHandlersFactory;
 import org.graalvm.compiler.debug.GlobalMetrics;
 import org.graalvm.compiler.options.OptionValues;
 import org.graalvm.compiler.serviceprovider.GraalServices;
-import org.graalvm.compiler.serviceprovider.GraalUnsafeAccess;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.AssumptionViolatedException;
@@ -69,7 +69,16 @@ import sun.misc.Unsafe;
  */
 public class GraalTest {
 
-    public static final Unsafe UNSAFE = GraalUnsafeAccess.getUnsafe();
+    public static final Unsafe UNSAFE;
+    static {
+        try {
+            Field theUnsafe = Unsafe.class.getDeclaredField("theUnsafe");
+            theUnsafe.setAccessible(true);
+            UNSAFE = (Unsafe) theUnsafe.get(Unsafe.class);
+        } catch (Exception e) {
+            throw new RuntimeException("exception while trying to get Unsafe", e);
+        }
+    }
 
     protected Method getMethod(String methodName) {
         return getMethod(getClass(), methodName);

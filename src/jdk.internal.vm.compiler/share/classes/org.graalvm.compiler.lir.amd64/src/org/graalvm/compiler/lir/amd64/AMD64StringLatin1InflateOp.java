@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2020, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -24,6 +24,7 @@
 
 package org.graalvm.compiler.lir.amd64;
 
+import static jdk.vm.ci.amd64.AMD64.k1;
 import static jdk.vm.ci.amd64.AMD64.k2;
 import static jdk.vm.ci.amd64.AMD64.rdi;
 import static jdk.vm.ci.amd64.AMD64.rdx;
@@ -46,7 +47,6 @@ import org.graalvm.compiler.lir.gen.LIRGeneratorTool;
 import jdk.vm.ci.amd64.AMD64;
 import jdk.vm.ci.amd64.AMD64.CPUFeature;
 import jdk.vm.ci.amd64.AMD64Kind;
-import jdk.vm.ci.code.CodeUtil;
 import jdk.vm.ci.code.Register;
 import jdk.vm.ci.code.TargetDescription;
 import jdk.vm.ci.meta.Value;
@@ -54,8 +54,6 @@ import jdk.vm.ci.meta.Value;
 @Opcode("AMD64_STRING_INFLATE")
 public final class AMD64StringLatin1InflateOp extends AMD64LIRInstruction {
     public static final LIRInstructionClass<AMD64StringLatin1InflateOp> TYPE = LIRInstructionClass.create(AMD64StringLatin1InflateOp.class);
-
-    private final int useAVX3Threshold;
 
     @Use({REG}) private Value rsrc;
     @Use({REG}) private Value rdst;
@@ -68,11 +66,8 @@ public final class AMD64StringLatin1InflateOp extends AMD64LIRInstruction {
     @Temp({REG}) private Value vtmp1;
     @Temp({REG}) private Value rtmp2;
 
-    public AMD64StringLatin1InflateOp(LIRGeneratorTool tool, int useAVX3Threshold, Value src, Value dst, Value len) {
+    public AMD64StringLatin1InflateOp(LIRGeneratorTool tool, Value src, Value dst, Value len) {
         super(TYPE);
-
-        assert CodeUtil.isPowerOf2(useAVX3Threshold) : "AVX3Threshold must be power of 2";
-        this.useAVX3Threshold = useAVX3Threshold;
 
         assert asRegister(src).equals(rsi);
         assert asRegister(dst).equals(rdi);
@@ -113,151 +108,153 @@ public final class AMD64StringLatin1InflateOp extends AMD64LIRInstruction {
      * @param src (rsi) the start address of source byte[] to be inflated
      * @param dst (rdi) the start address of destination char[] array
      * @param len (rdx) the length
-     * @param tmp1 (xmm) temporary xmm register
-     * @param tmp2 (gpr) temporary gpr register
+     * @param vtmp (xmm) temporary xmm register
+     * @param tmp (gpr) temporary gpr register
      */
-    private void byteArrayInflate(AMD64MacroAssembler masm, Register src, Register dst, Register len, Register tmp1, Register tmp2) {
-        assert tmp1.getRegisterCategory().equals(AMD64.XMM);
+    private static void byteArrayInflate(AMD64MacroAssembler masm, Register src, Register dst, Register len, Register vtmp, Register tmp) {
+        assert vtmp.getRegisterCategory().equals(AMD64.XMM);
 
-        Label labelCopyCharsLoop = new Label();
         Label labelDone = new Label();
         Label labelBelowThreshold = new Label();
-        Label labelAVX3Threshold = new Label();
 
-        // assert different registers
-        assert src.number != dst.number && src.number != len.number && src.number != tmp2.number;
-        assert dst.number != len.number && dst.number != tmp2.number;
-        assert len.number != tmp2.number;
+        assert src.number != dst.number && src.number != len.number && src.number != tmp.number;
+        assert dst.number != len.number && dst.number != tmp.number;
+        assert len.number != tmp.number;
 
-        masm.movl(tmp2, len);
         if (useAVX512ForStringInflateCompress(masm.target)) {
-            Label labelCopy32Loop = new Label();
-            Label labelCopyTail = new Label();
-            Register tmp3Aliased = len;
-
             // If the length of the string is less than 16, we chose not to use the
             // AVX512 instructions.
             masm.testl(len, -16);
             masm.jcc(AMD64Assembler.ConditionFlag.Zero, labelBelowThreshold);
 
-            masm.testl(len, -1 * useAVX3Threshold);
-            masm.jcc(AMD64Assembler.ConditionFlag.Zero, labelAVX3Threshold);
-
+            Label labelAvx512Tail = new Label();
             // Test for suitable number chunks with respect to the size of the vector
-            // operation, mask off remaining number of chars (bytes) to inflate after
+            // operation, mask off remaining number of chars (bytes) to inflate (such
+            // that 'len' will always hold the number of bytes left to inflate) after
             // committing to the vector loop.
             // Adjust vector pointers to upper address bounds and inverse loop index.
             // This will keep the loop condition simple.
             //
             // NOTE: The above idiom/pattern is used in all the loops below.
 
-            masm.andl(tmp2, 32 - 1);  // The tail count (in chars).
-            masm.andl(len, -32);     // The vector count (in chars).
-            masm.jccb(AMD64Assembler.ConditionFlag.Zero, labelCopyTail);
+            masm.movl(tmp, len);
+            masm.andl(tmp, -32);     // The vector count (in chars).
+            masm.jccb(AMD64Assembler.ConditionFlag.Zero, labelAvx512Tail);
+            masm.andl(len, 32 - 1);  // The tail count (in chars).
 
-            masm.leaq(src, new AMD64Address(src, len, AMD64Address.Scale.Times1));
-            masm.leaq(dst, new AMD64Address(dst, len, AMD64Address.Scale.Times2));
-            masm.negq(len);
+            masm.leaq(src, new AMD64Address(src, tmp, AMD64Address.Scale.Times1));
+            masm.leaq(dst, new AMD64Address(dst, tmp, AMD64Address.Scale.Times2));
+            masm.negq(tmp);
 
+            Label labelAvx512Loop = new Label();
             // Inflate 32 chars per iteration, reading 256-bit compact vectors
             // and writing 512-bit inflated ditto.
-            masm.bind(labelCopy32Loop);
-            masm.evpmovzxbw(tmp1, new AMD64Address(src, len, AMD64Address.Scale.Times1));
-            masm.evmovdqu16(new AMD64Address(dst, len, AMD64Address.Scale.Times2), tmp1);
-            masm.addq(len, 32);
-            masm.jcc(AMD64Assembler.ConditionFlag.NotZero, labelCopy32Loop);
+            masm.bind(labelAvx512Loop);
+            masm.evpmovzxbw(vtmp, new AMD64Address(src, tmp, AMD64Address.Scale.Times1));
+            masm.evmovdqu16(new AMD64Address(dst, tmp, AMD64Address.Scale.Times2), vtmp);
+            masm.addq(tmp, 32);
+            masm.jcc(AMD64Assembler.ConditionFlag.NotZero, labelAvx512Loop);
 
-            masm.bind(labelCopyTail);
+            masm.bind(labelAvx512Tail);
             // All done if the tail count is zero.
-            masm.testl(tmp2, tmp2);
+            masm.testl(len, len);
             masm.jcc(AMD64Assembler.ConditionFlag.Zero, labelDone);
+
+            masm.kmovq(k2, k1);      // Save k1
 
             // Compute (1 << N) - 1 = ~(~0 << N), where N is the remaining number
             // of characters to process.
-            masm.movl(tmp3Aliased, -1);
-            masm.shlxl(tmp3Aliased, tmp3Aliased, tmp2);
-            masm.notl(tmp3Aliased);
+            masm.movl(tmp, -1);
+            masm.shlxl(tmp, tmp, len);
+            masm.notl(tmp);
 
-            masm.kmovd(k2, tmp3Aliased);
-            masm.evpmovzxbw(tmp1, k2, new AMD64Address(src));
-            masm.evmovdqu16(new AMD64Address(dst), k2, tmp1);
-
+            masm.kmovd(k1, tmp);
+            masm.evpmovzxbw(vtmp, k1, new AMD64Address(src));
+            masm.evmovdqu16(new AMD64Address(dst), k1, vtmp);
+            masm.kmovq(k1, k2);      // Restore k1
             masm.jmp(labelDone);
-            masm.bind(labelAVX3Threshold);
         }
 
-        if (masm.supports(AMD64.CPUFeature.SSE4_2)) {
-            Label labelCopy16Loop = new Label();
-            Label labelCopy8Loop = new Label();
-            Label labelCopyBytes = new Label();
-            Label labelCopyNewTail = new Label();
-            Label labelCopyTail = new Label();
+        if (masm.supports(AMD64.CPUFeature.SSE4_1)) {
+
+            Label labelSSETail = new Label();
 
             if (masm.supports(AMD64.CPUFeature.AVX2)) {
-                masm.andl(tmp2, 16 - 1);
-                masm.andl(len, -16);
-                masm.jccb(AMD64Assembler.ConditionFlag.Zero, labelCopyNewTail);
-            } else {
-                masm.andl(tmp2, 0x00000007);
-                masm.andl(len, 0xfffffff8);
-                masm.jccb(AMD64Assembler.ConditionFlag.Zero, labelCopyTail);
-            }
 
-            // vectored inflation
-            masm.leaq(src, new AMD64Address(src, len, AMD64Address.Scale.Times1));
-            masm.leaq(dst, new AMD64Address(dst, len, AMD64Address.Scale.Times2));
-            masm.negq(len);
+                Label labelAvx2Tail = new Label();
 
-            if (masm.supports(AMD64.CPUFeature.AVX2)) {
-                masm.bind(labelCopy16Loop);
-                masm.vpmovzxbw(tmp1, new AMD64Address(src, len, AMD64Address.Scale.Times1));
-                masm.vmovdqu(new AMD64Address(dst, len, AMD64Address.Scale.Times2), tmp1);
-                masm.addq(len, 16);
-                masm.jcc(AMD64Assembler.ConditionFlag.NotZero, labelCopy16Loop);
+                masm.movl(tmp, len);
+                masm.andl(tmp, -16);
+                masm.jccb(AMD64Assembler.ConditionFlag.Zero, labelAvx2Tail);
+                masm.andl(len, 16 - 1);
 
-                // The avx512 logic may branch here. We assume that avx2 is supported when we use
-                // avx512 instructions.
+                masm.leaq(src, new AMD64Address(src, tmp, AMD64Address.Scale.Times1));
+                masm.leaq(dst, new AMD64Address(dst, tmp, AMD64Address.Scale.Times2));
+                masm.negq(tmp);
+
+                Label labelAvx2Loop = new Label();
+                // Inflate 16 bytes (chars) per iteration, reading 128-bit compact vectors
+                // and writing 256-bit inflated ditto.
+                masm.bind(labelAvx2Loop);
+                masm.vpmovzxbw(vtmp, new AMD64Address(src, tmp, AMD64Address.Scale.Times1));
+                masm.vmovdqu(new AMD64Address(dst, tmp, AMD64Address.Scale.Times2), vtmp);
+                masm.addq(tmp, 16);
+                masm.jcc(AMD64Assembler.ConditionFlag.NotZero, labelAvx2Loop);
+
                 masm.bind(labelBelowThreshold);
-                masm.bind(labelCopyNewTail);
-                masm.movl(len, tmp2);
-                masm.andl(tmp2, 0x00000007);
-                masm.andl(len, 0xfffffff8);
-                masm.jccb(AMD64Assembler.ConditionFlag.Zero, labelCopyTail);
+                masm.bind(labelAvx2Tail);
+
+                masm.movl(tmp, len);
+                masm.andl(tmp, -8);
+                masm.jccb(AMD64Assembler.ConditionFlag.Zero, labelSSETail);
+                masm.andl(len, 8 - 1);
 
                 // Inflate another 8 bytes before final tail copy.
-                masm.pmovzxbw(tmp1, new AMD64Address(src));
-                masm.movdqu(new AMD64Address(dst), tmp1);
+                masm.pmovzxbw(vtmp, new AMD64Address(src));
+                masm.movdqu(new AMD64Address(dst), vtmp);
                 masm.addq(src, 8);
                 masm.addq(dst, 16);
 
-                masm.jmp(labelCopyTail);
+                // Fall-through to labelSSETail.
+            } else {
+                // When there is no AVX2 support available, we use AVX/SSE support to
+                // inflate into maximum 128-bits per operation.
+
+                masm.movl(tmp, len);
+                masm.andl(tmp, -8);
+                masm.jccb(AMD64Assembler.ConditionFlag.Zero, labelSSETail);
+                masm.andl(len, 8 - 1);
+
+                masm.leaq(src, new AMD64Address(src, tmp, AMD64Address.Scale.Times1));
+                masm.leaq(dst, new AMD64Address(dst, tmp, AMD64Address.Scale.Times2));
+                masm.negq(tmp);
+
+                Label labelSSECopy8Loop = new Label();
+                // Inflate 8 bytes (chars) per iteration, reading 64-bit compact vectors
+                // and writing 128-bit inflated ditto.
+                masm.bind(labelSSECopy8Loop);
+                masm.pmovzxbw(vtmp, new AMD64Address(src, tmp, AMD64Address.Scale.Times1));
+                masm.movdqu(new AMD64Address(dst, tmp, AMD64Address.Scale.Times2), vtmp);
+                masm.addq(tmp, 8);
+                masm.jcc(AMD64Assembler.ConditionFlag.NotZero, labelSSECopy8Loop);
+
+                // Fall-through to labelSSETail.
             }
 
-            // Inflate 8 bytes (chars) per iteration, reading 64-bit compact vectors
-            // and writing 128-bit inflated ditto.
-            masm.bind(labelCopy8Loop);
-            masm.pmovzxbw(tmp1, new AMD64Address(src, len, AMD64Address.Scale.Times1));
-            masm.movdqu(new AMD64Address(dst, len, AMD64Address.Scale.Times2), tmp1);
-            masm.addq(len, 8);
-            masm.jcc(AMD64Assembler.ConditionFlag.NotZero, labelCopy8Loop);
+            Label labelCopyChars = new Label();
 
-            masm.bind(labelCopyTail);
-            masm.movl(len, tmp2);
-
+            masm.bind(labelSSETail);
             masm.cmpl(len, 4);
-            masm.jccb(AMD64Assembler.ConditionFlag.Less, labelCopyBytes);
+            masm.jccb(AMD64Assembler.ConditionFlag.Less, labelCopyChars);
 
-            masm.movdl(tmp1, new AMD64Address(src));
-            masm.pmovzxbw(tmp1, tmp1);
-            masm.movq(new AMD64Address(dst), tmp1);
+            masm.movdl(vtmp, new AMD64Address(src));
+            masm.pmovzxbw(vtmp, vtmp);
+            masm.movq(new AMD64Address(dst), vtmp);
             masm.subq(len, 4);
             masm.addq(src, 4);
             masm.addq(dst, 8);
 
-            masm.bind(labelCopyBytes);
-        } else {
-            // TODO this seems meaningless. And previously this recast does not contain this.
-            masm.bind(labelBelowThreshold);
+            masm.bind(labelCopyChars);
         }
 
         // Inflate any remaining characters (bytes) using a vanilla implementation.
@@ -267,10 +264,11 @@ public final class AMD64StringLatin1InflateOp extends AMD64LIRInstruction {
         masm.leaq(dst, new AMD64Address(dst, len, AMD64Address.Scale.Times2));
         masm.negq(len);
 
+        Label labelCopyCharsLoop = new Label();
         // Inflate a single byte (char) per iteration.
         masm.bind(labelCopyCharsLoop);
-        masm.movzbl(tmp2, new AMD64Address(src, len, AMD64Address.Scale.Times1));
-        masm.movw(new AMD64Address(dst, len, AMD64Address.Scale.Times2), tmp2);
+        masm.movzbl(tmp, new AMD64Address(src, len, AMD64Address.Scale.Times1));
+        masm.movw(new AMD64Address(dst, len, AMD64Address.Scale.Times2), tmp);
         masm.incrementq(len, 1);
         masm.jcc(AMD64Assembler.ConditionFlag.NotZero, labelCopyCharsLoop);
 
