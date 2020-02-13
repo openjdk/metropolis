@@ -25,7 +25,7 @@
 
 # All valid JVM features, regardless of platform
 VALID_JVM_FEATURES="compiler1 compiler2 zero minimal dtrace jvmti jvmci \
-    graal vm-structs jni-check services management epsilongc g1gc parallelgc serialgc shenandoahgc zgc nmt cds \
+    graal libgraal vm-structs jni-check services management epsilongc g1gc parallelgc serialgc shenandoahgc zgc nmt cds \
     static-build link-time-opt aot jfr"
 
 # Deprecated JVM features (these are ignored, but with a warning)
@@ -497,6 +497,45 @@ AC_DEFUN_ONCE([HOTSPOT_SETUP_JVM_FEATURES],
 
   AC_SUBST(ENABLE_AOT)
 
+  AC_MSG_CHECKING([if libgraal should be included])
+  # Check if libgraal is disabled
+  if HOTSPOT_IS_JVM_FEATURE_DISABLED(libgraal); then
+    AC_MSG_RESULT([no, forced])
+    JVM_FEATURES_libgraal=""
+    INCLUDE_LIBGRAAL="false"
+  else
+    if HOTSPOT_CHECK_JVM_FEATURE(libgraal); then
+      AC_MSG_RESULT([yes, forced])
+      if test ! -e "${TOPDIR}/make/data/libgraal/libjvmcicompiler.so" ; then
+        AC_MSG_ERROR([Specified JVM feature 'libgraal' requires presence of 'make/data/libgraal/libjvmcicompiler.so'])
+      fi
+      if test "x$OPENJDK_TARGET_OS" != xlinux || test "x$OPENJDK_TARGET_CPU" != "xx86_64" ; then
+        AC_MSG_ERROR([Specified JVM feature 'libgraal' is available only on linux-x64'])
+      fi
+      if test "x$JVM_FEATURES_graal" != "xgraal" ; then
+        AC_MSG_ERROR([Specified JVM feature 'libgraal' requires feature 'graal'])
+      fi
+      JVM_FEATURES_libgraal="libgraal"
+      INCLUDE_LIBGRAAL="true"
+    else
+      # By default enable libgraal on linux-x64 when graal is enabled.
+      if test "x$JVM_FEATURES_graal" = "xgraal" && \
+         test "x$OPENJDK_TARGET_CPU" = "xx86_64" && \
+         test "x$OPENJDK_TARGET_OS" = "xlinux" && \
+         test -e "${TOPDIR}/make/data/libgraal/libjvmcicompiler.so" ; then
+        AC_MSG_RESULT([yes])
+        JVM_FEATURES_libgraal="libgraal"
+        INCLUDE_LIBGRAAL="true"
+      else
+        AC_MSG_RESULT([no])
+        JVM_FEATURES_libgraal=""
+        INCLUDE_LIBGRAAL="false"
+      fi
+    fi
+  fi
+
+  AC_SUBST(INCLUDE_LIBGRAAL)
+
   if test "x$OPENJDK_TARGET_CPU" = xarm ; then
     # Default to use link time optimizations on minimal on arm
     JVM_FEATURES_link_time_opt="link-time-opt"
@@ -551,7 +590,7 @@ AC_DEFUN_ONCE([HOTSPOT_SETUP_JVM_FEATURES],
   fi
 
   # Enable features depending on variant.
-  JVM_FEATURES_server="compiler1 compiler2 $NON_MINIMAL_FEATURES $JVM_FEATURES $JVM_FEATURES_jvmci $JVM_FEATURES_aot $JVM_FEATURES_graal"
+  JVM_FEATURES_server="compiler1 compiler2 $NON_MINIMAL_FEATURES $JVM_FEATURES $JVM_FEATURES_jvmci $JVM_FEATURES_aot $JVM_FEATURES_graal $JVM_FEATURES_libgraal"
   JVM_FEATURES_client="compiler1 $NON_MINIMAL_FEATURES $JVM_FEATURES"
   JVM_FEATURES_core="$NON_MINIMAL_FEATURES $JVM_FEATURES"
   JVM_FEATURES_minimal="compiler1 minimal serialgc $JVM_FEATURES $JVM_FEATURES_link_time_opt"
