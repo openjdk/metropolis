@@ -497,6 +497,36 @@ AC_DEFUN_ONCE([HOTSPOT_SETUP_JVM_FEATURES],
 
   AC_SUBST(ENABLE_AOT)
 
+  AC_ARG_WITH(metropolis-kit, [AS_HELP_STRING([--with-metropolis-kit],
+      [specify location to metropolis specific build-time dependencies])])
+
+  if test "x${with_metropolis_kit}" != x; then
+    AC_MSG_CHECKING([for metropolis kit])
+    METROPOLIS_KIT=
+    if test "x${with_metropolis_kit}" = xno; then
+      if HOTSPOT_CHECK_JVM_FEATURE(libgraal); then
+        AC_MSG_ERROR([Specified JVM feature 'libgraal' can not be built with out metropolis-kit])
+      else
+        AC_MSG_RESULT([disabled, libgraal can not be built])
+      fi
+    elif test "x${with_metropolis_kit}" = xyes; then
+      AC_MSG_RESULT([not specified])
+      AC_MSG_ERROR([You must specify the path to metropolis specific build-time dependencies])
+    else
+      METROPOLIS_KIT="${with_metropolis_kit}"
+      if test ! -d "${METROPOLIS_KIT}"; then
+        AC_MSG_RESULT([no])
+        AC_MSG_ERROR([Could not find metropolis specific build-time dependencies (${METROPOLIS_KIT})])
+      else
+        AC_MSG_RESULT([yes: $METROPOLIS_KIT])
+      fi
+    fi
+  fi
+
+  BASIC_FIXUP_PATH([METROPOLIS_KIT])
+  AC_SUBST(METROPOLIS_KIT)
+
+
   AC_MSG_CHECKING([if libgraal should be included])
   # Check if libgraal is disabled
   if HOTSPOT_IS_JVM_FEATURE_DISABLED(libgraal); then
@@ -506,8 +536,8 @@ AC_DEFUN_ONCE([HOTSPOT_SETUP_JVM_FEATURES],
   else
     if HOTSPOT_CHECK_JVM_FEATURE(libgraal); then
       AC_MSG_RESULT([yes, forced])
-      if test ! -e "${TOPDIR}/make/data/libgraal/libjvmcicompiler.so" ; then
-        AC_MSG_ERROR([Specified JVM feature 'libgraal' requires presence of 'make/data/libgraal/libjvmcicompiler.so'])
+      if test ! -e "$METROPOLIS_KIT/libjvmcicompiler.so" ; then
+        AC_MSG_ERROR([Specified JVM feature 'libgraal' requires presence of 'libjvmcicompiler.so' in ${METROPOLIS_KIT}])
       fi
       if test "x$OPENJDK_TARGET_OS" != xlinux || test "x$OPENJDK_TARGET_CPU" != "xx86_64" ; then
         AC_MSG_ERROR([Specified JVM feature 'libgraal' is available only on linux-x64'])
@@ -522,7 +552,8 @@ AC_DEFUN_ONCE([HOTSPOT_SETUP_JVM_FEATURES],
       if test "x$JVM_FEATURES_graal" = "xgraal" && \
          test "x$OPENJDK_TARGET_CPU" = "xx86_64" && \
          test "x$OPENJDK_TARGET_OS" = "xlinux" && \
-         test -e "${TOPDIR}/make/data/libgraal/libjvmcicompiler.so" ; then
+         test "x$METROPOLIS_KIT" != "x" && \
+         test -e "${METROPOLIS_KIT}/libjvmcicompiler.so" ; then
         AC_MSG_RESULT([yes])
         JVM_FEATURES_libgraal="libgraal"
         INCLUDE_LIBGRAAL="true"

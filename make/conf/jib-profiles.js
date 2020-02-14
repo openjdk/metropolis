@@ -404,7 +404,7 @@ var getJibProfilesProfiles = function (input, common, data) {
         "linux-x64": {
             target_os: "linux",
             target_cpu: "x64",
-            dependencies: ["devkit", "graphviz", "pandoc", "graalunit_lib"],
+            dependencies: ["devkit", "graphviz", "pandoc", "graalunit_lib", "metropolis_kit"],
             configure_args: concat(common.configure_args_64bit,
                 "--enable-full-docs", "--with-zlib=system",
                 (isWsl(input) ? [ "--host=x86_64-unknown-linux-gnu",
@@ -1032,6 +1032,15 @@ var getJibProfilesDependencies = function (input, common) {
             ext: "tar.gz",
             module: "devkit-" + input.build_platform,
             revision: devkit_platform_revisions[input.build_platform]
+        },
+
+        metropolis_kit : {
+            organization: common.organization,
+            ext: "tar.gz",
+            module: "metropoliskit",
+            classifier: input.build_platform,
+            revision: "SNAPSHOT",
+            configure_args: "--with-metropolis-kit=" + input.get("metropolis_kit", "install_path")
         },
 
         cups: {

@@ -157,7 +157,7 @@ ifneq ($(filter jdk, $(MAKECMDGOALS)), )
         DEPS := $(jlink_jdk), \
         OUTPUT_FILE := $(JDK_IMAGE_DIR)/lib/libjvmcicompiler.so, \
         SUPPORT_DIR := $(SUPPORT_OUTPUTDIR)/images/jdk, \
-        COMMAND := $(CP) -f $(TOPDIR)/make/data/libgraal/libjvmcicompiler.so $(JDK_IMAGE_DIR)/lib/, \
+        COMMAND := $(CP) -f $(METROPOLIS_KIT)/libjvmcicompiler.so $(JDK_IMAGE_DIR)/lib/, \
     ))
 
     JDK_TARGETS += $(JDK_COPY_LIBGRAAL)
