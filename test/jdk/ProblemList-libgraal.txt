@@ -35,6 +35,20 @@ java/lang/RuntimeTests/exec/LotsOfOutput.java                           8238728 
 java/util/concurrent/ScheduledThreadPoolExecutor/BasicCancelTest.java   8238728   generic-all
 com/sun/crypto/provider/KeyFactory/TestProviderLeak.java                8238728   generic-all
 
+java/lang/System/LoggerFinder/BaseLoggerFinderTest/BaseLoggerFinderTest.java  8238728  generic-all
+java/lang/System/LoggerFinder/internal/BaseLoggerBridgeTest/BaseLoggerBridgeTest.java     8238728  generic-all
+java/lang/System/LoggerFinder/internal/BasePlatformLoggerTest/BasePlatformLoggerTest.java 8238728  generic-all
+java/lang/System/LoggerFinder/internal/LoggerBridgeTest/LoggerBridgeTest.java             8238728  generic-all
+java/lang/System/LoggerFinder/internal/PlatformLoggerBridgeTest/PlatformLoggerBridgeTest.java  8238728  generic-all
+
+com/sun/crypto/provider/Cipher/Blowfish/TestCipherBlowfish.java         8239960   generic-all
+
+com/sun/crypto/provider/Cipher/CTR/CounterMode.java                     8239958   generic-all
+com/sun/crypto/provider/Cipher/DES/TestCipherDES.java                   8239958   generic-all
+com/sun/crypto/provider/Cipher/TextLength/TestCipherTextLength.java     8239958   generic-all
+
+java/lang/invoke/lambda/LogGeneratedClassesTest.java                    8239961   generic-all
+
 java/lang/management/ThreadMXBean/ThreadLists.java                      8238940   generic-all
 java/lang/management/ThreadMXBean/ResetPeakThreadCount.java             8238940   generic-all
 java/lang/management/ManagementFactory/ValidateOpenTypes.java           8238940   generic-all
@@ -49,8 +63,91 @@ com/sun/jdi/RedefineCrossStart.java                                     8195635 
 com/sun/jdi/RedefineG.java                                              8195635   generic-all
 com/sun/jdi/RedefineTTYLineNumber.java                                  8195635   generic-all
 
+sun/nio/ch/TestMaxCachedBufferSize.java                                 8239949   generic-all
+
+api/java_awt/Robot/constructor.html                                     8238939   generic-all
+
 com/sun/jdi/ClassesByName2Test.java                                     8238939   generic-all
 com/sun/jdi/RedefineCrossEvent.java                                     8238939   generic-all
+
+java/util/ResourceBundle/Bug6299235/Bug6299235Test.java                 8238939   generic-all
+
+java/beans/XMLEncoder/java_awt_AWTKeyStroke.java                        8238939   generic-all
+java/beans/XMLEncoder/java_awt_CardLayout.java                          8238939   generic-all
+java/beans/XMLEncoder/java_awt_Color.java                               8238939   generic-all
+java/beans/XMLEncoder/java_awt_Font.java                                8238939   generic-all
+java/beans/XMLEncoder/java_awt_GridBagConstraints.java                  8238939   generic-all
+java/beans/XMLEncoder/java_awt_GridBagLayout.java                       8238939   generic-all
+java/beans/XMLEncoder/java_awt_LinearGradientPaint.java                 8238939   generic-all
+java/beans/XMLEncoder/javax_swing_border_EtchedBorder.java              8238939   generic-all
+java/beans/XMLEncoder/javax_swing_KeyStroke.java                        8238939   generic-all
+java/beans/XMLEncoder/javax_swing_plaf_BorderUIResource_TitledBorderUIResource.java  8238939  generic-all
+java/beans/XMLEncoder/javax_swing_plaf_FontUIResource.java              8238939   generic-all
+javax/imageio/AllowSearch.java                                          8238939   generic-all
+javax/imageio/AppContextTest.java                                       8238939   generic-all
+javax/imageio/EmptyFileTest.java                                        8238939   generic-all
+javax/imageio/IIOImageConstructor.java                                  8238939   generic-all
+javax/imageio/ImageCompressionTypesTest.java                            8238939   generic-all
+javax/imageio/ImageIOWriteFile.java                                     8238939   generic-all
+javax/imageio/ImageReaderReadAll.java                                   8238939   generic-all
+javax/imageio/MultiReadTest.java                                        8238939   generic-all
+javax/imageio/ReadAbortTest.java                                        8238939   generic-all
+javax/imageio/WriteAbortTest.java                                       8238939   generic-all
+javax/imageio/metadata/GetElementsByTagNameTest.java                    8238939   generic-all
+javax/imageio/metadata/NthItemNodeListTest.java                         8238939   generic-all
+javax/imageio/plugins/bmp/BmpBigDestinationTest.java                    8238939   generic-all
+javax/imageio/plugins/bmp/BmpDefaultImageMetadataTest.java              8238939   generic-all
+javax/imageio/plugins/bmp/BMPSubsamplingTest.java                       8238939   generic-all
+javax/imageio/plugins/bmp/ReaderListenersTest.java                      8238939   generic-all
+javax/imageio/plugins/bmp/RLECompressionTest.java                       8238939   generic-all
+javax/imageio/plugins/bmp/RleEncodingTest.java                          8238939   generic-all
+javax/imageio/plugins/bmp/TopDownTest.java                              8238939   generic-all
+javax/imageio/plugins/bmp/WriteProgressListenerTest.java                8238939   generic-all
+javax/imageio/plugins/external_plugin_tests/TestClassPathPlugin.sh      8238939   generic-all
+javax/imageio/plugins/gif/AnimationTest.java                            8238939   generic-all
+javax/imageio/plugins/gif/GifTransparencyTest.java                      8238939   generic-all
+javax/imageio/plugins/gif/IndexingTest.java                             8238939   generic-all
+javax/imageio/plugins/gif/RGBImageTest.java                             8238939   generic-all
+javax/imageio/plugins/gif/TransparencyTest.java                         8238939   generic-all
+javax/imageio/plugins/jpeg/ByteBinaryTest.java                          8238939   generic-all
+javax/imageio/plugins/jpeg/CanEncodeIndexed.java                        8238939   generic-all
+javax/imageio/plugins/jpeg/ConcurrentReadingTest.java                   8238939   generic-all
+javax/imageio/plugins/jpeg/ConcurrentWritingTest.java                   8238939   generic-all
+javax/imageio/plugins/jpeg/CrashAfterDispose.java                       8238939   generic-all
+javax/imageio/plugins/jpeg/DestTypeTest.java                            8238939   generic-all
+javax/imageio/plugins/jpeg/RasterWithMinXTest.java                      8238939   generic-all
+javax/imageio/plugins/jpeg/ReadAsGrayTest.java                          8238939   generic-all
+javax/imageio/plugins/jpeg/ReadingInterruptionTest.java                 8238939   generic-all
+javax/imageio/plugins/jpeg/TestWriteARGBJPEG.java                       8238939   generic-all
+javax/imageio/plugins/jpeg/UshortGrayTest.java                          8238939   generic-all
+javax/imageio/plugins/jpeg/VariableSubsamplingTest.java                 8238939   generic-all
+javax/imageio/plugins/jpeg/WritingInterruptionTest.java                 8238939   generic-all
+javax/imageio/plugins/png/CanEncodeShort.java                           8238939   generic-all
+javax/imageio/plugins/png/GrayPngTest.java                              8238939   generic-all
+javax/imageio/plugins/png/ITXtTest.java                                 8238939   generic-all
+javax/imageio/plugins/png/ItxtUtf8Test.java                             8238939   generic-all
+javax/imageio/plugins/png/MergeStdCommentTest.java                      8238939   generic-all
+javax/imageio/plugins/png/PngPremultAlphaTest.java                      8238939   generic-all
+javax/imageio/plugins/png/ReadMalformedPngTest.java                     8238939   generic-all
+javax/imageio/plugins/png/ReadPNGWithNoTextInTEXTChunk.java             8238939   generic-all
+javax/imageio/plugins/png/ReadPngGrayImageWithTRNSChunk.java            8238939   generic-all
+javax/imageio/plugins/png/ReadPngRGBImageWithTRNSChunk.java             8238939   generic-all
+javax/imageio/plugins/png/ShortPaletteTest.java                         8238939   generic-all
+javax/imageio/plugins/png/VerifyBitDepthScalingWithTRNSChunk.java       8238939   generic-all
+javax/imageio/plugins/png/VerifyRGBValuesFromBKGDChunk.java             8238939   generic-all
+javax/imageio/plugins/shared/ImageWriterCompressionTest.java            8238939   generic-all
+javax/imageio/plugins/tiff/BogusSecondImageTest.java                    8238939   generic-all
+javax/imageio/plugins/tiff/MultiPageImageTIFFFieldTest.java             8238939   generic-all
+javax/imageio/plugins/tiff/ReadUnknownTagsTest.java                     8238939   generic-all
+javax/imageio/plugins/tiff/ReadWithoutBaselineTagSet.java               8238939   generic-all
+javax/imageio/plugins/wbmp/ValidWbmpTest.java                           8238939   generic-all
+javax/imageio/plugins/wbmp/WBMPPluginTest.java                          8238939   generic-all
+javax/imageio/plugins/wbmp/WbmpBigDestinationTest.java                  8238939   generic-all
+javax/imageio/plugins/wbmp/WbmpDefaultImageMetadataTest.java            8238939   generic-all
+javax/imageio/spi/AppletContextTest/BadPluginConfigurationTest.sh       8238939   generic-all
+javax/imageio/spi/CreateMemoryCacheOutputStream.java                    8238939   generic-all
+javax/imageio/stream/DeleteOnExitTest.sh                                8238939   generic-all
+javax/imageio/stream/StreamCloserLeak/run_test.sh                       8238939   generic-all
 
 # Next JFR tests fail with Graal. Assuming 8193210.
 jdk/jfr/event/compiler/TestCodeSweeper.java              8193210   generic-all

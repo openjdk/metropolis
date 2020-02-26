@@ -345,7 +345,7 @@ static void report_vm_version(outputStream* st, char* buf, int buflen) {
                  TieredCompilation ? ", tiered" : "",
 #if INCLUDE_JVMCI
                  EnableJVMCI ? ", jvmci" : "",
-                 UseJVMCICompiler ? ", jvmci compiler" : "",
+                 UseJVMCICompiler ? (UseJVMCINativeLibrary ? ", jvmci native compiler" : ", jvmci compiler") : "",
 #else
                  "", "",
 #endif
