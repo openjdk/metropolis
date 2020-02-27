@@ -1039,7 +1039,7 @@ var getJibProfilesDependencies = function (input, common) {
             ext: "tar.gz",
             module: "metropoliskit",
             classifier: input.build_platform,
-            revision: "SNAPSHOT",
+            revision: "1.0-SNAPSHOT",
             configure_args: "--with-metropolis-kit=" + input.get("metropolis_kit", "install_path")
         },
 
