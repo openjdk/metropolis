@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2015, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -31,46 +31,32 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.text.MessageFormat;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import static jdk.incubator.jpackage.internal.OverridableResource.createResource;
-
-import static jdk.incubator.jpackage.internal.StandardBundlerParam.*;
+import static jdk.incubator.jpackage.internal.StandardBundlerParam.APP_NAME;
+import static jdk.incubator.jpackage.internal.StandardBundlerParam.ICON;
 
 public class LinuxAppImageBuilder extends AbstractAppImageBuilder {
 
-    private static final String LIBRARY_NAME = "libapplauncher.so";
-    final static String DEFAULT_ICON = "java32.png";
-
-    private final ApplicationLayout appLayout;
-
-    public static final BundlerParamInfo<File> ICON_PNG =
+    static final BundlerParamInfo<File> ICON_PNG =
             new StandardBundlerParam<>(
             "icon.png",
             File.class,
             params -> {
                 File f = ICON.fetchFrom(params);
                 if (f != null && !f.getName().toLowerCase().endsWith(".png")) {
-                    Log.error(MessageFormat.format(I18N.getString(
-                            "message.icon-not-png"), f));
+                    Log.error(MessageFormat.format(
+                            I18N.getString("message.icon-not-png"), f));
                     return null;
                 }
                 return f;
             },
             (s, p) -> new File(s));
 
-    private static ApplicationLayout createAppLayout(Map<String, Object> params,
-            Path imageOutDir) {
-        return ApplicationLayout.linuxAppImage().resolveAt(
-                imageOutDir.resolve(APP_NAME.fetchFrom(params)));
-    }
+    final static String DEFAULT_ICON = "java32.png";
 
-    public LinuxAppImageBuilder(Map<String, Object> params, Path imageOutDir)
-            throws IOException {
-        super(params, createAppLayout(params, imageOutDir).runtimeDirectory());
-
-        appLayout = createAppLayout(params, imageOutDir);
+    LinuxAppImageBuilder(Path imageOutDir) {
+        super(imageOutDir);
     }
 
     private void writeEntry(InputStream in, Path dstFile) throws IOException {
@@ -82,39 +68,9 @@ public class LinuxAppImageBuilder extends AbstractAppImageBuilder {
         return APP_NAME.fetchFrom(params);
     }
 
-    private Path getLauncherCfgPath(Map<String, ? super Object> params) {
-        return appLayout.appDirectory().resolve(
-                APP_NAME.fetchFrom(params) + ".cfg");
-    }
-
-    @Override
-    public Path getAppDir() {
-        return appLayout.appDirectory();
-    }
-
-    @Override
-    public Path getAppModsDir() {
-        return appLayout.appModsDirectory();
-    }
-
-    @Override
-    protected String getCfgAppDir() {
-        return Path.of("$ROOTDIR").resolve(
-                ApplicationLayout.linuxAppImage().appDirectory()).toString()
-                + File.separator;
-    }
-
-    @Override
-    protected String getCfgRuntimeDir() {
-        return Path.of("$ROOTDIR").resolve(
-              ApplicationLayout.linuxAppImage().runtimeDirectory()).toString();
-    }
-
     @Override
     public void prepareApplicationFiles(Map<String, ? super Object> params)
             throws IOException {
-        Map<String, ? super Object> originalParams = new HashMap<>(params);
-
         appLayout.roots().stream().forEach(dir -> {
             try {
                 IOUtils.writableOutputDir(dir);
@@ -124,34 +80,22 @@ public class LinuxAppImageBuilder extends AbstractAppImageBuilder {
         });
 
         // create the primary launcher
-        createLauncherForEntryPoint(params);
-
-        // Copy library to the launcher folder
-        try (InputStream is_lib = getResourceAsStream(LIBRARY_NAME)) {
-            writeEntry(is_lib, appLayout.dllDirectory().resolve(LIBRARY_NAME));
-        }
+        createLauncherForEntryPoint(params, null);
 
         // create the additional launchers, if any
         List<Map<String, ? super Object>> entryPoints
                 = StandardBundlerParam.ADD_LAUNCHERS.fetchFrom(params);
         for (Map<String, ? super Object> entryPoint : entryPoints) {
-            createLauncherForEntryPoint(
-                    AddLauncherArguments.merge(originalParams, entryPoint));
+            createLauncherForEntryPoint(AddLauncherArguments.merge(params,
+                    entryPoint, ICON.getID(), ICON_PNG.getID()), params);
         }
 
         // Copy class path entries to Java folder
         copyApplication(params);
-
-        // Copy icon to Resources folder
-        copyIcon(params);
     }
 
-    @Override
-    public void prepareJreFiles(Map<String, ? super Object> params)
-            throws IOException {}
-
-    private void createLauncherForEntryPoint(
-            Map<String, ? super Object> params) throws IOException {
+    private void createLauncherForEntryPoint(Map<String, ? super Object> params,
+            Map<String, ? super Object> mainParams) throws IOException {
         // Copy executable to launchers folder
         Path executableFile = appLayout.launchersDirectory().resolve(getLauncherName(params));
         try (InputStream is_launcher =
@@ -162,34 +106,15 @@ public class LinuxAppImageBuilder extends AbstractAppImageBuilder {
         executableFile.toFile().setExecutable(true, false);
         executableFile.toFile().setWritable(true, true);
 
-        writeCfgFile(params, getLauncherCfgPath(params).toFile());
-    }
+        writeCfgFile(params);
 
-    private void copyIcon(Map<String, ? super Object> params)
-            throws IOException {
-
-        Path iconTarget = appLayout.destktopIntegrationDirectory().resolve(
-                APP_NAME.fetchFrom(params) + IOUtils.getSuffix(Path.of(
-                DEFAULT_ICON)));
-
-        createResource(DEFAULT_ICON, params)
-                .setCategory("icon")
-                .setExternal(ICON_PNG.fetchFrom(params))
-                .saveToFile(iconTarget);
-    }
-
-    private void copyApplication(Map<String, ? super Object> params)
-            throws IOException {
-        for (RelativeFileSet appResources :
-                APP_RESOURCES_LIST.fetchFrom(params)) {
-            if (appResources == null) {
-                throw new RuntimeException("Null app resources?");
-            }
-            File srcdir = appResources.getBaseDirectory();
-            for (String fname : appResources.getIncludedFiles()) {
-                copyEntry(appLayout.appDirectory(), srcdir, fname);
-            }
+        var iconResource = createIconResource(DEFAULT_ICON, ICON_PNG, params,
+                mainParams);
+        if (iconResource != null) {
+            Path iconTarget = appLayout.destktopIntegrationDirectory().resolve(
+                    APP_NAME.fetchFrom(params) + IOUtils.getSuffix(Path.of(
+                    DEFAULT_ICON)));
+            iconResource.saveToFile(iconTarget);
         }
     }
-
 }

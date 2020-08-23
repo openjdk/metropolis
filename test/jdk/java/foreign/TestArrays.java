@@ -38,8 +38,9 @@ import java.lang.invoke.VarHandle;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
-import org.testng.SkipException;
 import org.testng.annotations.*;
+
+import static jdk.incubator.foreign.MemorySegment.READ;
 import static org.testng.Assert.*;
 
 public class TestArrays {
@@ -105,12 +106,8 @@ public class TestArrays {
     }
 
     @Test(expectedExceptions = { UnsupportedOperationException.class,
-                                 OutOfMemoryError.class })
+                                 IllegalArgumentException.class })
     public void testTooBigForArray() {
-        if (System.getProperty("sun.arch.data.model").equals("32")) {
-            throw new SkipException("32-bit Unsafe does not support this allocation size");
-        }
-
         MemorySegment.allocateNative((long) Integer.MAX_VALUE * 2).toByteArray();
     }
 
@@ -118,6 +115,20 @@ public class TestArrays {
     public void testArrayFromClosedSegment() {
         MemorySegment segment = MemorySegment.allocateNative(8);
         segment.close();
+        segment.toByteArray();
+    }
+
+    @Test(expectedExceptions = UnsupportedOperationException.class)
+    public void testArrayFromHeapSegmentWithoutAccess() {
+        MemorySegment segment = MemorySegment.ofArray(new byte[8]);
+        segment = segment.withAccessModes(segment.accessModes() & ~READ);
+        segment.toByteArray();
+    }
+
+    @Test(expectedExceptions = UnsupportedOperationException.class)
+    public void testArrayFromNativeSegmentWithoutAccess() {
+        MemorySegment segment = MemorySegment.allocateNative(8);
+        segment = segment.withAccessModes(segment.accessModes() & ~READ);
         segment.toByteArray();
     }
 

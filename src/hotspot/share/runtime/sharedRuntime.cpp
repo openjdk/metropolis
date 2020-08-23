@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -65,6 +65,7 @@
 #include "runtime/javaCalls.hpp"
 #include "runtime/sharedRuntime.hpp"
 #include "runtime/stubRoutines.hpp"
+#include "runtime/synchronizer.hpp"
 #include "runtime/vframe.inline.hpp"
 #include "runtime/vframeArray.hpp"
 #include "utilities/copy.hpp"
@@ -2072,20 +2073,17 @@ JRT_LEAF(void, SharedRuntime::reguard_yellow_pages())
   (void) JavaThread::current()->reguard_stack();
 JRT_END
 
-
-// Handles the uncommon case in locking, i.e., contention or an inflated lock.
-JRT_BLOCK_ENTRY(void, SharedRuntime::complete_monitor_locking_C(oopDesc* _obj, BasicLock* lock, JavaThread* thread))
+void SharedRuntime::monitor_enter_helper(oopDesc* obj, BasicLock* lock, JavaThread* thread) {
   if (!SafepointSynchronize::is_synchronizing()) {
     // Only try quick_enter() if we're not trying to reach a safepoint
     // so that the calling thread reaches the safepoint more quickly.
-    if (ObjectSynchronizer::quick_enter(_obj, thread, lock)) return;
+    if (ObjectSynchronizer::quick_enter(obj, thread, lock)) return;
   }
   // NO_ASYNC required because an async exception on the state transition destructor
   // would leave you with the lock held and it would never be released.
   // The normal monitorenter NullPointerException is thrown without acquiring a lock
   // and the model is that an exception implies the method failed.
   JRT_BLOCK_NO_ASYNC
-  oop obj(_obj);
   if (PrintBiasedLockingStatistics) {
     Atomic::inc(BiasedLocking::slow_path_entry_count_addr());
   }
@@ -2093,42 +2091,23 @@ JRT_BLOCK_ENTRY(void, SharedRuntime::complete_monitor_locking_C(oopDesc* _obj, B
   ObjectSynchronizer::enter(h_obj, lock, CHECK);
   assert(!HAS_PENDING_EXCEPTION, "Should have no exception here");
   JRT_BLOCK_END
+}
+
+// Handles the uncommon case in locking, i.e., contention or an inflated lock.
+JRT_BLOCK_ENTRY(void, SharedRuntime::complete_monitor_locking_C(oopDesc* obj, BasicLock* lock, JavaThread* thread))
+  SharedRuntime::monitor_enter_helper(obj, lock, thread);
 JRT_END
 
+void SharedRuntime::monitor_exit_helper(oopDesc* obj, BasicLock* lock, JavaThread* thread) {
+  assert(JavaThread::current() == thread, "invariant");
+  // Exit must be non-blocking, and therefore no exceptions can be thrown.
+  EXCEPTION_MARK;
+  ObjectSynchronizer::exit(obj, lock, THREAD);
+}
+
 // Handles the uncommon cases of monitor unlocking in compiled code
-JRT_LEAF(void, SharedRuntime::complete_monitor_unlocking_C(oopDesc* _obj, BasicLock* lock, JavaThread * THREAD))
-   oop obj(_obj);
-  assert(JavaThread::current() == THREAD, "invariant");
-  // I'm not convinced we need the code contained by MIGHT_HAVE_PENDING anymore
-  // testing was unable to ever fire the assert that guarded it so I have removed it.
-  assert(!HAS_PENDING_EXCEPTION, "Do we need code below anymore?");
-#undef MIGHT_HAVE_PENDING
-#ifdef MIGHT_HAVE_PENDING
-  // Save and restore any pending_exception around the exception mark.
-  // While the slow_exit must not throw an exception, we could come into
-  // this routine with one set.
-  oop pending_excep = NULL;
-  const char* pending_file;
-  int pending_line;
-  if (HAS_PENDING_EXCEPTION) {
-    pending_excep = PENDING_EXCEPTION;
-    pending_file  = THREAD->exception_file();
-    pending_line  = THREAD->exception_line();
-    CLEAR_PENDING_EXCEPTION;
-  }
-#endif /* MIGHT_HAVE_PENDING */
-
-  {
-    // Exit must be non-blocking, and therefore no exceptions can be thrown.
-    EXCEPTION_MARK;
-    ObjectSynchronizer::exit(obj, lock, THREAD);
-  }
-
-#ifdef MIGHT_HAVE_PENDING
-  if (pending_excep != NULL) {
-    THREAD->set_pending_exception(pending_excep, pending_file, pending_line);
-  }
-#endif /* MIGHT_HAVE_PENDING */
+JRT_LEAF(void, SharedRuntime::complete_monitor_unlocking_C(oopDesc* obj, BasicLock* lock, JavaThread* thread))
+  SharedRuntime::monitor_exit_helper(obj, lock, thread);
 JRT_END
 
 #ifndef PRODUCT
@@ -2873,6 +2852,12 @@ void AdapterHandlerLibrary::create_native_wrapper(const methodHandle& method) {
       CodeBuffer buffer(buf);
       double locs_buf[20];
       buffer.insts()->initialize_shared_locs((relocInfo*)locs_buf, sizeof(locs_buf) / sizeof(relocInfo));
+#if defined(AARCH64)
+      // On AArch64 with ZGC and nmethod entry barriers, we need all oops to be
+      // in the constant pool to ensure ordering between the barrier and oops
+      // accesses. For native_wrappers we need a constant.
+      buffer.initialize_consts_size(8);
+#endif
       MacroAssembler _masm(&buffer);
 
       // Fill in the signature array, for the calling-convention call.
@@ -2979,9 +2964,6 @@ VMReg SharedRuntime::name_for_receiver() {
 VMRegPair *SharedRuntime::find_callee_arguments(Symbol* sig, bool has_receiver, bool has_appendix, int* arg_size) {
   // This method is returning a data structure allocating as a
   // ResourceObject, so do not put any ResourceMarks in here.
-  char *s = sig->as_C_string();
-  int len = (int)strlen(s);
-  s++; len--;                   // Skip opening paren
 
   BasicType *sig_bt = NEW_RESOURCE_ARRAY(BasicType, 256);
   VMRegPair *regs = NEW_RESOURCE_ARRAY(VMRegPair, 256);
@@ -2990,33 +2972,11 @@ VMRegPair *SharedRuntime::find_callee_arguments(Symbol* sig, bool has_receiver, 
     sig_bt[cnt++] = T_OBJECT; // Receiver is argument 0; not in signature
   }
 
-  while (*s != JVM_SIGNATURE_ENDFUNC) { // Find closing right paren
-    switch (*s++) {                     // Switch on signature character
-    case JVM_SIGNATURE_BYTE:    sig_bt[cnt++] = T_BYTE;    break;
-    case JVM_SIGNATURE_CHAR:    sig_bt[cnt++] = T_CHAR;    break;
-    case JVM_SIGNATURE_DOUBLE:  sig_bt[cnt++] = T_DOUBLE;  sig_bt[cnt++] = T_VOID; break;
-    case JVM_SIGNATURE_FLOAT:   sig_bt[cnt++] = T_FLOAT;   break;
-    case JVM_SIGNATURE_INT:     sig_bt[cnt++] = T_INT;     break;
-    case JVM_SIGNATURE_LONG:    sig_bt[cnt++] = T_LONG;    sig_bt[cnt++] = T_VOID; break;
-    case JVM_SIGNATURE_SHORT:   sig_bt[cnt++] = T_SHORT;   break;
-    case JVM_SIGNATURE_BOOLEAN: sig_bt[cnt++] = T_BOOLEAN; break;
-    case JVM_SIGNATURE_VOID:    sig_bt[cnt++] = T_VOID;    break;
-    case JVM_SIGNATURE_CLASS: // Oop
-      while (*s++ != JVM_SIGNATURE_ENDCLASS);   // Skip signature
-      sig_bt[cnt++] = T_OBJECT;
-      break;
-    case JVM_SIGNATURE_ARRAY: { // Array
-      do {                      // Skip optional size
-        while (*s >= '0' && *s <= '9') s++;
-      } while (*s++ == JVM_SIGNATURE_ARRAY);   // Nested arrays?
-      // Skip element type
-      if (s[-1] == JVM_SIGNATURE_CLASS)
-        while (*s++ != JVM_SIGNATURE_ENDCLASS); // Skip signature
-      sig_bt[cnt++] = T_ARRAY;
-      break;
-    }
-    default : ShouldNotReachHere();
-    }
+  for (SignatureStream ss(sig); !ss.at_return_type(); ss.next()) {
+    BasicType type = ss.type();
+    sig_bt[cnt++] = type;
+    if (is_double_word_type(type))
+      sig_bt[cnt++] = T_VOID;
   }
 
   if (has_appendix) {
@@ -3111,10 +3071,15 @@ JRT_LEAF(intptr_t*, SharedRuntime::OSR_migration_begin( JavaThread *thread) )
        kptr2 = fr.next_monitor_in_interpreter_frame(kptr2) ) {
     if (kptr2->obj() != NULL) {         // Avoid 'holes' in the monitor array
       BasicLock *lock = kptr2->lock();
-      // Inflate so the displaced header becomes position-independent
-      if (lock->displaced_header().is_unlocked())
+      // Inflate so the object's header no longer refers to the BasicLock.
+      if (lock->displaced_header().is_unlocked()) {
+        // The object is locked and the resulting ObjectMonitor* will also be
+        // locked so it can't be async deflated until ownership is dropped.
+        // See the big comment in basicLock.cpp: BasicLock::move_to().
         ObjectSynchronizer::inflate_helper(kptr2->obj());
-      // Now the displaced header is free to move
+      }
+      // Now the displaced header is free to move because the
+      // object's header no longer refers to it.
       buf[i++] = (intptr_t)lock->displaced_header().value();
       buf[i++] = cast_from_oop<intptr_t>(kptr2->obj());
     }

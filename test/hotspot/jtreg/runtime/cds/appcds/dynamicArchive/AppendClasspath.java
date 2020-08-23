@@ -27,10 +27,11 @@
  * @summary At run time, it is OK to append new elements to the classpath that was used at dump time.
  * @requires vm.cds
  * @library /test/lib /test/hotspot/jtreg/runtime/cds/appcds
- * @modules jdk.jartool/sun.tools.jar
  * @compile ../test-classes/Hello.java
  * @compile ../test-classes/HelloMore.java
- * @run driver AppendClasspath
+ * @build sun.hotspot.WhiteBox
+ * @run driver ClassFileInstaller sun.hotspot.WhiteBox sun.hotspot.WhiteBox$WhiteBoxPermission
+ * @run main/othervm -XX:+UnlockDiagnosticVMOptions -XX:+WhiteBoxAPI -Xbootclasspath/a:. AppendClasspath
  */
 
 import java.io.File;

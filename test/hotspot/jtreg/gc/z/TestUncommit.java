@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2019, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -25,11 +25,23 @@ package gc.z;
 
 /*
  * @test TestUncommit
- * @requires vm.gc.Z & !vm.graal.enabled
+ * @requires vm.gc.Z
  * @summary Test ZGC uncommit unused memory
- * @run main/othervm -XX:+UnlockExperimentalVMOptions -XX:+UseZGC -Xms128M -Xmx512M -XX:ZUncommitDelay=10 gc.z.TestUncommit true 3
- * @run main/othervm -XX:+UnlockExperimentalVMOptions -XX:+UseZGC -Xms512M -Xmx512M -XX:ZUncommitDelay=10 gc.z.TestUncommit false 1
- * @run main/othervm -XX:+UnlockExperimentalVMOptions -XX:+UseZGC -Xms128M -Xmx512M -XX:ZUncommitDelay=10 -XX:-ZUncommit gc.z.TestUncommit false 1
+ * @run main/othervm -XX:+UseZGC -Xlog:gc*,gc+heap=debug,gc+stats=off -Xms128M -Xmx512M -XX:ZUncommitDelay=10 gc.z.TestUncommit true 2
+ */
+
+/*
+ * @test TestUncommit
+ * @requires vm.gc.Z
+ * @summary Test ZGC uncommit unused memory
+ * @run main/othervm -XX:+UseZGC -Xlog:gc*,gc+heap=debug,gc+stats=off -Xms512M -Xmx512M -XX:ZUncommitDelay=10 gc.z.TestUncommit false 1
+ */
+
+/*
+ * @test TestUncommit
+ * @requires vm.gc.Z
+ * @summary Test ZGC uncommit unused memory
+ * @run main/othervm -XX:+UseZGC -Xlog:gc*,gc+heap=debug,gc+stats=off -Xms128M -Xmx512M -XX:ZUncommitDelay=10 -XX:-ZUncommit gc.z.TestUncommit false 1
  */
 
 import java.util.ArrayList;

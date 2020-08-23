@@ -46,6 +46,8 @@ compiler/unsafe/UnsafeGetStableArrayElement.java                8181833   generi
 compiler/whitebox/ClearMethodStateTest.java                     8181831   generic-all
 compiler/whitebox/EnqueueMethodForCompilationTest.java          8181831   generic-all
 compiler/whitebox/MakeMethodNotCompilableTest.java              8181831   generic-all
+compiler/whitebox/ForceNMethodSweepTest.java                    8181831   generic-all
+compiler/whitebox/IsMethodCompilableTest.java                   8181831   generic-all
 
 compiler/whitebox/LockCompilationTest.java                      8238933   generic-all
 
@@ -209,6 +211,8 @@ vmTestbase/nsk/jdb/clear/clear003/clear003.java                               82
 runtime/exceptionMsgs/AbstractMethodError/AbstractMethodErrorTest.java        8222582 generic-all
 
 runtime/CommandLine/OptionsValidation/TestOptionsWithRanges.java#id3  8238938  generic-all
+
+runtime/cds/DeterministicDump.java                               8196611   generic-all
 
 # Graal unit tests
 org.graalvm.compiler.hotspot.test.CompilationWrapperTest                         8205081

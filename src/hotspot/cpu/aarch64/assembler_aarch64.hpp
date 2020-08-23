@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 1997, 2019, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2014, 2019, Red Hat Inc. All rights reserved.
+ * Copyright (c) 1997, 2020, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2014, 2020, Red Hat Inc. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -554,7 +554,7 @@ class Address {
 
   void lea(MacroAssembler *, Register) const;
 
-  static bool offset_ok_for_immed(long offset, int shift = 0) {
+  static bool offset_ok_for_immed(long offset, int shift) {
     unsigned mask = (1 << shift) - 1;
     if (offset < 0 || offset & mask) {
       return (uabs(offset) < (1 << (20 - 12))); // Unscaled offset
@@ -962,9 +962,9 @@ public:
   INSN(smc, 0b000, 0, 0b11);
   INSN(brk, 0b001, 0, 0b00);
   INSN(hlt, 0b010, 0, 0b00);
-  INSN(dpcs1, 0b101, 0, 0b01);
-  INSN(dpcs2, 0b101, 0, 0b10);
-  INSN(dpcs3, 0b101, 0, 0b11);
+  INSN(dcps1, 0b101, 0, 0b01);
+  INSN(dcps2, 0b101, 0, 0b10);
+  INSN(dcps3, 0b101, 0, 0b11);
 
 #undef INSN
 
@@ -2259,6 +2259,8 @@ public:
   INSN(mlsv,   1, 0b100101, false); // accepted arrangements: T8B, T16B, T4H, T8H, T2S, T4S
   INSN(sshl,   0, 0b010001, true);  // accepted arrangements: T8B, T16B, T4H, T8H, T2S, T4S, T2D
   INSN(ushl,   1, 0b010001, true);  // accepted arrangements: T8B, T16B, T4H, T8H, T2S, T4S, T2D
+  INSN(addpv,  0, 0b101111, true);  // accepted arrangements: T8B, T16B, T4H, T8H, T2S, T4S, T2D
+  INSN(smullv, 0, 0b110000, false); // accepted arrangements: T8B, T16B, T4H, T8H, T2S, T4S
   INSN(umullv, 1, 0b110000, false); // accepted arrangements: T8B, T16B, T4H, T8H, T2S, T4S
   INSN(umlalv, 1, 0b100000, false); // accepted arrangements: T8B, T16B, T4H, T8H, T2S, T4S
 
@@ -2267,21 +2269,23 @@ public:
 #define INSN(NAME, opc, opc2, accepted) \
   void NAME(FloatRegister Vd, SIMD_Arrangement T, FloatRegister Vn) {                   \
     guarantee(T != T1Q && T != T1D, "incorrect arrangement");                           \
-    if (accepted < 2) guarantee(T != T2S && T != T2D, "incorrect arrangement");         \
-    if (accepted == 0) guarantee(T == T8B || T == T16B, "incorrect arrangement");       \
+    if (accepted < 3) guarantee(T != T2D, "incorrect arrangement");                     \
+    if (accepted < 2) guarantee(T != T2S, "incorrect arrangement");                     \
+    if (accepted < 1) guarantee(T == T8B || T == T16B, "incorrect arrangement");        \
     starti;                                                                             \
     f(0, 31), f((int)T & 1, 30), f(opc, 29), f(0b01110, 28, 24);                        \
     f((int)T >> 1, 23, 22), f(opc2, 21, 10);                                            \
     rf(Vn, 5), rf(Vd, 0);                                                               \
   }
 
-  INSN(absr,   0, 0b100000101110, 1); // accepted arrangements: T8B, T16B, T4H, T8H,      T4S
-  INSN(negr,   1, 0b100000101110, 2); // accepted arrangements: T8B, T16B, T4H, T8H, T2S, T4S, T2D
+  INSN(absr,   0, 0b100000101110, 3); // accepted arrangements: T8B, T16B, T4H, T8H, T2S, T4S, T2D
+  INSN(negr,   1, 0b100000101110, 3); // accepted arrangements: T8B, T16B, T4H, T8H, T2S, T4S, T2D
   INSN(notr,   1, 0b100000010110, 0); // accepted arrangements: T8B, T16B
   INSN(addv,   0, 0b110001101110, 1); // accepted arrangements: T8B, T16B, T4H, T8H,      T4S
-  INSN(cls,    0, 0b100000010010, 1); // accepted arrangements: T8B, T16B, T4H, T8H,      T4S
-  INSN(clz,    1, 0b100000010010, 1); // accepted arrangements: T8B, T16B, T4H, T8H,      T4S
+  INSN(cls,    0, 0b100000010010, 2); // accepted arrangements: T8B, T16B, T4H, T8H, T2S, T4S
+  INSN(clz,    1, 0b100000010010, 2); // accepted arrangements: T8B, T16B, T4H, T8H, T2S, T4S
   INSN(cnt,    0, 0b100000010110, 0); // accepted arrangements: T8B, T16B
+  INSN(uaddlp, 1, 0b100000001010, 2); // accepted arrangements: T8B, T16B, T4H, T8H, T2S, T4S
   INSN(uaddlv, 1, 0b110000001110, 1); // accepted arrangements: T8B, T16B, T4H, T8H,      T4S
 
 #undef INSN
@@ -2613,42 +2617,42 @@ public:
 #undef INSN
 
   // AdvSIMD two-reg misc
-#define INSN(NAME, U, opcode)                                                       \
+  // In this instruction group, the 2 bits in the size field ([23:22]) may be
+  // fixed or determined by the "SIMD_Arrangement T", or both. The additional
+  // parameter "tmask" is a 2-bit mask used to indicate which bits in the size
+  // field are determined by the SIMD_Arrangement. The bit of "tmask" should be
+  // set to 1 if corresponding bit marked as "x" in the ArmARM.
+#define INSN(NAME, U, size, tmask, opcode)                                          \
   void NAME(FloatRegister Vd, SIMD_Arrangement T, FloatRegister Vn) {               \
        starti;                                                                      \
        assert((ASSERTION), MSG);                                                    \
        f(0, 31), f((int)T & 1, 30), f(U, 29), f(0b01110, 28, 24);                   \
-       f((int)(T >> 1), 23, 22), f(0b10000, 21, 17), f(opcode, 16, 12);             \
-       f(0b10, 11, 10), rf(Vn, 5), rf(Vd, 0);                                       \
+       f(size | ((int)(T >> 1) & tmask), 23, 22), f(0b10000, 21, 17);               \
+       f(opcode, 16, 12), f(0b10, 11, 10), rf(Vn, 5), rf(Vd, 0);                    \
  }
 
 #define MSG "invalid arrangement"
 
 #define ASSERTION (T == T2S || T == T4S || T == T2D)
-  INSN(fsqrt, 1, 0b11111);
-  INSN(fabs,  0, 0b01111);
-  INSN(fneg,  1, 0b01111);
+  INSN(fsqrt,  1, 0b10, 0b01, 0b11111);
+  INSN(fabs,   0, 0b10, 0b01, 0b01111);
+  INSN(fneg,   1, 0b10, 0b01, 0b01111);
+  INSN(frintn, 0, 0b00, 0b01, 0b11000);
+  INSN(frintm, 0, 0b00, 0b01, 0b11001);
+  INSN(frintp, 0, 0b10, 0b01, 0b11000);
 #undef ASSERTION
 
 #define ASSERTION (T == T8B || T == T16B || T == T4H || T == T8H || T == T2S || T == T4S)
-  INSN(rev64, 0, 0b00000);
+  INSN(rev64, 0, 0b00, 0b11, 0b00000);
 #undef ASSERTION
 
 #define ASSERTION (T == T8B || T == T16B || T == T4H || T == T8H)
-  INSN(rev32, 1, 0b00000);
-private:
-  INSN(_rbit, 1, 0b00101);
-public:
-
+  INSN(rev32, 1, 0b00, 0b11, 0b00000);
 #undef ASSERTION
 
 #define ASSERTION (T == T8B || T == T16B)
-  INSN(rev16, 0, 0b00001);
-  // RBIT only allows T8B and T16B but encodes them oddly.  Argh...
-  void rbit(FloatRegister Vd, SIMD_Arrangement T, FloatRegister Vn) {
-    assert((ASSERTION), MSG);
-    _rbit(Vd, SIMD_Arrangement((T & 1) | 0b010), Vn);
-  }
+  INSN(rev16, 0, 0b00, 0b11, 0b00001);
+  INSN(rbit,  1, 0b01, 0b00, 0b00101);
 #undef ASSERTION
 
 #undef MSG

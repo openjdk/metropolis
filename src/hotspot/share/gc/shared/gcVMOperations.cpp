@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2005, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2005, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -55,12 +55,10 @@ VM_GC_Operation::~VM_GC_Operation() {
 void VM_GC_Operation::notify_gc_begin(bool full) {
   HOTSPOT_GC_BEGIN(
                    full);
-  HS_DTRACE_WORKAROUND_TAIL_CALL_BUG();
 }
 
 void VM_GC_Operation::notify_gc_end() {
   HOTSPOT_GC_END();
-  HS_DTRACE_WORKAROUND_TAIL_CALL_BUG();
 }
 
 // Allocations may fail in several threads at about the same time,
@@ -151,8 +149,7 @@ void VM_GC_HeapInspection::doit() {
       log_warning(gc)("GC locker is held; pre-dump GC was skipped");
     }
   }
-  HeapInspection inspect(_csv_format, _print_help, _print_class_stats,
-                         _columns);
+  HeapInspection inspect;
   inspect.heap_inspection(_out);
 }
 

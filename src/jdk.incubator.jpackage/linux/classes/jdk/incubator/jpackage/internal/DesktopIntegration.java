@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2019, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -25,19 +25,35 @@
 package jdk.incubator.jpackage.internal;
 
 import java.awt.image.BufferedImage;
-import java.io.*;
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import javax.imageio.ImageIO;
 import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamWriter;
-import static jdk.incubator.jpackage.internal.LinuxAppBundler.ICON_PNG;
 import static jdk.incubator.jpackage.internal.LinuxAppImageBuilder.DEFAULT_ICON;
+import static jdk.incubator.jpackage.internal.LinuxAppImageBuilder.ICON_PNG;
 import static jdk.incubator.jpackage.internal.OverridableResource.createResource;
-import static jdk.incubator.jpackage.internal.StandardBundlerParam.*;
+import static jdk.incubator.jpackage.internal.StandardBundlerParam.ADD_LAUNCHERS;
+import static jdk.incubator.jpackage.internal.StandardBundlerParam.APP_NAME;
+import static jdk.incubator.jpackage.internal.StandardBundlerParam.DESCRIPTION;
+import static jdk.incubator.jpackage.internal.StandardBundlerParam.FILE_ASSOCIATIONS;
+import static jdk.incubator.jpackage.internal.StandardBundlerParam.ICON;
 
 /**
  * Helper to create files for desktop integration.
@@ -48,8 +64,9 @@ final class DesktopIntegration {
     static final String DESKTOP_COMMANDS_UNINSTALL = "DESKTOP_COMMANDS_UNINSTALL";
     static final String UTILITY_SCRIPTS = "UTILITY_SCRIPTS";
 
-    DesktopIntegration(PlatformPackage thePackage,
-            Map<String, ? super Object> params) {
+    private DesktopIntegration(PlatformPackage thePackage,
+            Map<String, ? super Object> params,
+            Map<String, ? super Object> mainParams) throws IOException {
 
         associations = FileAssociation.fetchFrom(params).stream()
                 .filter(fa -> !fa.mimeTypes.isEmpty())
@@ -60,46 +77,77 @@ final class DesktopIntegration {
 
         this.thePackage = thePackage;
 
-        final File customIconFile = ICON_PNG.fetchFrom(params);
+        // Need desktop and icon files if one of conditions is met:
+        //  - there are file associations configured
+        //  - user explicitely requested to create a shortcut
+        boolean withDesktopFile = !associations.isEmpty() || SHORTCUT_HINT.fetchFrom(params);
 
-        iconResource = createResource(DEFAULT_ICON, params)
-                .setCategory(I18N.getString("resource.menu-icon"))
-                .setExternal(customIconFile);
+        var curIconResource = LinuxAppImageBuilder.createIconResource(DEFAULT_ICON,
+                ICON_PNG, params, mainParams);
+        if (curIconResource == null) {
+            // This is additional launcher with explicit `no icon` configuration.
+            withDesktopFile = false;
+        } else {
+            final Path nullPath = null;
+            if (curIconResource.saveToFile(nullPath)
+                    != OverridableResource.Source.DefaultResource) {
+                // This launcher has custom icon configured.
+                withDesktopFile = true;
+            }
+        }
+
         desktopFileResource = createResource("template.desktop", params)
                 .setCategory(I18N.getString("resource.menu-shortcut-descriptor"))
                 .setPublicName(APP_NAME.fetchFrom(params) + ".desktop");
+
+        final String escapedAppFileName = APP_NAME.fetchFrom(params).replaceAll("\\s+", "_");
 
         // XDG recommends to use vendor prefix in desktop file names as xdg
         // commands copy files to system directories.
         // Package name should be a good prefix.
         final String desktopFileName = String.format("%s-%s.desktop",
-                    thePackage.name(), APP_NAME.fetchFrom(params));
+                    thePackage.name(), escapedAppFileName);
         final String mimeInfoFileName = String.format("%s-%s-MimeInfo.xml",
-                    thePackage.name(), APP_NAME.fetchFrom(params));
+                    thePackage.name(), escapedAppFileName);
 
         mimeInfoFile = new DesktopFile(mimeInfoFileName);
 
-        if (!associations.isEmpty() || SHORTCUT_HINT.fetchFrom(params) || customIconFile != null) {
-            //
-            // Create primary .desktop file if one of conditions is met:
-            // - there are file associations configured
-            // - user explicitely requested to create a shortcut
-            // - custom icon specified
-            //
+        if (withDesktopFile) {
             desktopFile = new DesktopFile(desktopFileName);
-            iconFile = new DesktopFile(APP_NAME.fetchFrom(params)
+            iconFile = new DesktopFile(escapedAppFileName
                     + IOUtils.getSuffix(Path.of(DEFAULT_ICON)));
+
+            if (curIconResource == null) {
+                // Create default icon.
+                curIconResource = LinuxAppImageBuilder.createIconResource(
+                        DEFAULT_ICON, ICON_PNG, mainParams, null);
+            }
         } else {
             desktopFile = null;
             iconFile = null;
         }
 
+        iconResource = curIconResource;
+
         desktopFileData = Collections.unmodifiableMap(
                 createDataForDesktopFile(params));
 
-        nestedIntegrations = launchers.stream().map(
-                launcherParams -> new DesktopIntegration(thePackage,
-                        launcherParams)).collect(Collectors.toList());
+        nestedIntegrations = new ArrayList<>();
+        for (var launcherParams : launchers) {
+            launcherParams = AddLauncherArguments.merge(params, launcherParams,
+                    ICON.getID(), ICON_PNG.getID(), ADD_LAUNCHERS.getID(),
+                    FILE_ASSOCIATIONS.getID());
+            nestedIntegrations.add(new DesktopIntegration(thePackage,
+                    launcherParams, params));
+        }
+    }
+
+    static DesktopIntegration create(PlatformPackage thePackage,
+            Map<String, ? super Object> params) throws IOException {
+        if (StandardBundlerParam.isRuntimeInstaller(params)) {
+            return null;
+        }
+        return new DesktopIntegration(thePackage, params, null);
     }
 
     List<String> requiredPackages() {
@@ -203,9 +251,14 @@ final class DesktopIntegration {
         data.put("APPLICATION_ICON",
                 iconFile != null ? iconFile.installPath().toString() : null);
         data.put("DEPLOY_BUNDLE_CATEGORY", MENU_GROUP.fetchFrom(params));
-        data.put("APPLICATION_LAUNCHER",
-                thePackage.installedApplicationLayout().launchersDirectory().resolve(
-                        LinuxAppImageBuilder.getLauncherName(params)).toString());
+
+        String appLauncher = thePackage.installedApplicationLayout().launchersDirectory().resolve(
+                LinuxAppImageBuilder.getLauncherName(params)).toString();
+        if (Pattern.compile("\\s").matcher(appLauncher).find()) {
+            // Path contains whitespace(s). Enclose in double quotes.
+            appLauncher = "\"" + appLauncher + "\"";
+        }
+        data.put("APPLICATION_LAUNCHER", appLauncher);
 
         return data;
     }

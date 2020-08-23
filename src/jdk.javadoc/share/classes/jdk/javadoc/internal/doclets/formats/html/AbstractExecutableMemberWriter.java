@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -82,9 +82,6 @@ public abstract class AbstractExecutableMemberWriter extends AbstractMemberWrite
         return writer.getTypeParameterLinks(linkInfo);
     }
 
-    /**
-     * {@inheritDoc}
-     */
     @Override
     protected Content getDeprecatedLink(Element member) {
         Content deprecatedLinkContent = new ContentBuilder();
@@ -93,7 +90,7 @@ public abstract class AbstractExecutableMemberWriter extends AbstractMemberWrite
             deprecatedLinkContent.add(".");
             deprecatedLinkContent.add(member.getSimpleName());
         }
-        String signature = utils.flatSignature((ExecutableElement) member);
+        String signature = utils.flatSignature((ExecutableElement) member, typeElement);
         if (signature.length() > 2) {
             deprecatedLinkContent.add(Entity.ZERO_WIDTH_SPACE);
         }
@@ -115,8 +112,7 @@ public abstract class AbstractExecutableMemberWriter extends AbstractMemberWrite
             Content tdSummary) {
         ExecutableElement ee = (ExecutableElement)member;
         Content memberLink = HtmlTree.SPAN(HtmlStyle.memberNameLink,
-                writer.getDocLink(context, te, ee,
-                name(ee), false));
+                writer.getDocLink(context, te, ee, name(ee), false));
         Content code = HtmlTree.CODE(memberLink);
         addParameters(ee, code);
         tdSummary.add(code);
@@ -260,7 +256,7 @@ public abstract class AbstractExecutableMemberWriter extends AbstractMemberWrite
         if (!exceptions.isEmpty()) {
             Content link = writer.getLink(new LinkInfoImpl(configuration, MEMBER, exceptions.get(0)));
             htmltree.add(link);
-            for(int i = 1; i < exceptions.size(); i++) {
+            for (int i = 1; i < exceptions.size(); i++) {
                 htmltree.add(",");
                 htmltree.add(DocletConstants.NL);
                 Content exceptionLink = writer.getLink(new LinkInfoImpl(configuration, MEMBER,

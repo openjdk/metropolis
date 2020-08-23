@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017, 2018, Red Hat, Inc. All rights reserved.
+ * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 only, as
@@ -23,6 +24,7 @@
 
 #include "precompiled.hpp"
 #include "gc/epsilon/epsilonHeap.hpp"
+#include "gc/epsilon/epsilonInitLogger.hpp"
 #include "gc/epsilon/epsilonMemoryPool.hpp"
 #include "gc/epsilon/epsilonThreadLocalData.hpp"
 #include "gc/shared/gcArguments.hpp"
@@ -66,24 +68,7 @@ jint EpsilonHeap::initialize() {
   BarrierSet::set_barrier_set(new EpsilonBarrierSet());
 
   // All done, print out the configuration
-  if (init_byte_size != max_byte_size) {
-    log_info(gc)("Resizeable heap; starting at " SIZE_FORMAT "M, max: " SIZE_FORMAT "M, step: " SIZE_FORMAT "M",
-                 init_byte_size / M, max_byte_size / M, EpsilonMinHeapExpand / M);
-  } else {
-    log_info(gc)("Non-resizeable heap; start/max: " SIZE_FORMAT "M", init_byte_size / M);
-  }
-
-  if (UseTLAB) {
-    log_info(gc)("Using TLAB allocation; max: " SIZE_FORMAT "K", _max_tlab_size * HeapWordSize / K);
-    if (EpsilonElasticTLAB) {
-      log_info(gc)("Elastic TLABs enabled; elasticity: %.2fx", EpsilonTLABElasticity);
-    }
-    if (EpsilonElasticTLABDecay) {
-      log_info(gc)("Elastic TLABs decay enabled; decay time: " SIZE_FORMAT "ms", EpsilonTLABDecayTime);
-    }
-  } else {
-    log_info(gc)("Not using TLAB allocation");
-  }
+  EpsilonInitLogger::print();
 
   return JNI_OK;
 }
@@ -301,8 +286,10 @@ void EpsilonHeap::print_on(outputStream *st) const {
   // Cast away constness:
   ((VirtualSpace)_virtual_space).print_on(st);
 
-  st->print_cr("Allocation space:");
-  _space->print_on(st);
+  if (_space != NULL) {
+    st->print_cr("Allocation space:");
+    _space->print_on(st);
+  }
 
   MetaspaceUtils::print_on(st);
 }

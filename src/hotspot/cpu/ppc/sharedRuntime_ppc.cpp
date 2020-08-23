@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2020, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2012, 2019 SAP SE. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -1934,27 +1934,15 @@ nmethod *SharedRuntime::generate_native_wrapper(MacroAssembler *masm,
     for (int i = 0; i < total_in_args ; i++, o++) {
       if (in_sig_bt[i] == T_ARRAY) {
         // Arrays are passed as int, elem* pair
-        Symbol* atype = ss.as_symbol();
-        const char* at = atype->as_C_string();
-        if (strlen(at) == 2) {
-          assert(at[0] == '[', "must be");
-          switch (at[1]) {
-            case 'B': in_elem_bt[o] = T_BYTE; break;
-            case 'C': in_elem_bt[o] = T_CHAR; break;
-            case 'D': in_elem_bt[o] = T_DOUBLE; break;
-            case 'F': in_elem_bt[o] = T_FLOAT; break;
-            case 'I': in_elem_bt[o] = T_INT; break;
-            case 'J': in_elem_bt[o] = T_LONG; break;
-            case 'S': in_elem_bt[o] = T_SHORT; break;
-            case 'Z': in_elem_bt[o] = T_BOOLEAN; break;
-            default: ShouldNotReachHere();
-          }
-        }
+        ss.skip_array_prefix(1);  // skip one '['
+        assert(ss.is_primitive(), "primitive type expected");
+        in_elem_bt[o] = ss.type();
       } else {
         in_elem_bt[o] = T_VOID;
       }
       if (in_sig_bt[i] != T_VOID) {
-        assert(in_sig_bt[i] == ss.type(), "must match");
+        assert(in_sig_bt[i] == ss.type() ||
+               in_sig_bt[i] == T_ARRAY, "must match");
         ss.next();
       }
     }
@@ -2357,7 +2345,7 @@ nmethod *SharedRuntime::generate_native_wrapper(MacroAssembler *masm,
     RegisterSaver::restore_argument_registers_and_pop_frame(masm, frame_size, total_c_args, out_regs, out_regs2);
 
     __ asm_assert_mem8_is_zero(thread_(pending_exception),
-       "no pending exception allowed on exit from SharedRuntime::complete_monitor_locking_C", 0);
+       "no pending exception allowed on exit from SharedRuntime::complete_monitor_locking_C");
 
     __ bind(locked);
   }
@@ -2570,7 +2558,7 @@ nmethod *SharedRuntime::generate_native_wrapper(MacroAssembler *masm,
     __ call_VM_leaf(CAST_FROM_FN_PTR(address, SharedRuntime::complete_monitor_unlocking_C), r_oop, r_box, R16_thread);
 
     __ asm_assert_mem8_is_zero(thread_(pending_exception),
-       "no pending exception allowed on exit from SharedRuntime::complete_monitor_unlocking_C", 0);
+       "no pending exception allowed on exit from SharedRuntime::complete_monitor_unlocking_C");
 
     restore_native_result(masm, ret_type, workspace_slot_offset);
 
@@ -2784,7 +2772,7 @@ static void push_skeleton_frames(MacroAssembler* masm, bool deopt,
 #ifdef ASSERT
   // Make sure that there is at least one entry in the array.
   __ cmpdi(CCR0, number_of_frames_reg, 0);
-  __ asm_assert_ne("array_size must be > 0", 0x205);
+  __ asm_assert_ne("array_size must be > 0");
 #endif
 
   // Now push the new interpreter frames.
@@ -3096,7 +3084,7 @@ void SharedRuntime::generate_uncommon_trap_blob() {
 #ifdef ASSERT
   __ lwz(R22_tmp2, Deoptimization::UnrollBlock::unpack_kind_offset_in_bytes(), unroll_block_reg);
   __ cmpdi(CCR0, R22_tmp2, (unsigned)Deoptimization::Unpack_uncommon_trap);
-  __ asm_assert_eq("SharedRuntime::generate_deopt_blob: expected Unpack_uncommon_trap", 0);
+  __ asm_assert_eq("SharedRuntime::generate_deopt_blob: expected Unpack_uncommon_trap");
 #endif
 
   // Allocate new interpreter frame(s) and possibly a c2i adapter
@@ -3240,7 +3228,7 @@ SafepointBlob* SharedRuntime::generate_handler_blob(address call_ptr, int poll_t
   // No exception case.
   __ BIND(noException);
 
-  if (SafepointMechanism::uses_thread_local_poll() && !cause_return) {
+  if (!cause_return) {
     Label no_adjust;
     // If our stashed return pc was modified by the runtime we avoid touching it
     __ ld(R0, frame_size_in_bytes + _abi(lr), R1_SP);

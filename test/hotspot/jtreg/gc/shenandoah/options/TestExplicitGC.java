@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017, 2018, Red Hat, Inc. All rights reserved.
+ * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 only, as
@@ -24,8 +25,7 @@
 /*
  * @test TestExplicitGC
  * @summary Test that Shenandoah reacts to explicit GC flags appropriately
- * @key gc
- * @requires vm.gc.Shenandoah & !vm.graal.enabled
+ * @requires vm.gc.Shenandoah
  * @library /test/lib
  * @modules java.base/jdk.internal.misc
  *          java.management
@@ -59,11 +59,6 @@ public class TestExplicitGC {
                 "Pause Final Mark",
         };
 
-        String[] concTraversal = new String[] {
-                "Pause Init Traversal",
-                "Pause Final Traversal",
-        };
-
         {
             ProcessBuilder pb = ProcessTools.createJavaProcessBuilder(
                     "-XX:+UnlockExperimentalVMOptions",
@@ -77,9 +72,6 @@ public class TestExplicitGC {
             }
             for (String p : concNormal) {
                 output.shouldContain(p);
-            }
-            for (String p : concTraversal) {
-                output.shouldNotContain(p);
             }
         }
 
@@ -98,9 +90,6 @@ public class TestExplicitGC {
             for (String p : concNormal) {
                 output.shouldNotContain(p);
             }
-            for (String p : concTraversal) {
-                output.shouldNotContain(p);
-            }
         }
 
         {
@@ -116,30 +105,6 @@ public class TestExplicitGC {
                 output.shouldNotContain(p);
             }
             for (String p : concNormal) {
-                output.shouldContain(p);
-            }
-            for (String p : concTraversal) {
-                output.shouldNotContain(p);
-            }
-        }
-
-        {
-            ProcessBuilder pb = ProcessTools.createJavaProcessBuilder(
-                    "-XX:+UnlockExperimentalVMOptions",
-                    "-XX:+UseShenandoahGC",
-                    "-Xlog:gc",
-                    "-XX:+ExplicitGCInvokesConcurrent",
-                    "-XX:ShenandoahGCMode=traversal",
-                    TestExplicitGC.class.getName(),
-                    "test");
-            OutputAnalyzer output = new OutputAnalyzer(pb.start());
-            for (String p : full) {
-                output.shouldNotContain(p);
-            }
-            for (String p : concNormal) {
-                output.shouldNotContain(p);
-            }
-            for (String p : concTraversal) {
                 output.shouldContain(p);
             }
         }
@@ -159,9 +124,24 @@ public class TestExplicitGC {
             for (String p : concNormal) {
                 output.shouldNotContain(p);
             }
-            for (String p : concTraversal) {
+        }
+
+        {
+            ProcessBuilder pb = ProcessTools.createJavaProcessBuilder(
+                    "-XX:+UnlockExperimentalVMOptions",
+                    "-XX:+UseShenandoahGC",
+                    "-Xlog:gc",
+                    "-XX:+ExplicitGCInvokesConcurrent",
+                    "-XX:ShenandoahGCMode=iu",
+                    TestExplicitGC.class.getName(),
+                    "test");
+            OutputAnalyzer output = new OutputAnalyzer(pb.start());
+            for (String p : full) {
                 output.shouldNotContain(p);
             }
-        }
+            for (String p : concNormal) {
+                output.shouldContain(p);
+            }
+         }
     }
 }

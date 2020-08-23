@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -1047,7 +1047,7 @@ void nmethod::fix_oop_relocations(address begin, address end, bool initialize_im
       oop_Relocation* reloc = iter.oop_reloc();
       if (initialize_immediates && reloc->oop_is_immediate()) {
         oop* dest = reloc->oop_addr();
-        initialize_immediate_oop(dest, (jobject) *dest);
+        initialize_immediate_oop(dest, cast_from_oop<jobject>(*dest));
       }
       // Refresh the oop-related bits of this instruction.
       reloc->fix_oop_relocation();
@@ -1116,7 +1116,9 @@ bool nmethod::can_convert_to_zombie() {
   // not_entrant. However, with concurrent code cache unloading, the state
   // might have moved on to unloaded if it is_unloading(), due to racing
   // concurrent GC threads.
-  assert(is_not_entrant() || is_unloading(), "must be a non-entrant method");
+  assert(is_not_entrant() || is_unloading() ||
+         !Thread::current()->is_Code_cache_sweeper_thread(),
+         "must be a non-entrant method if called from sweeper");
 
   // Since the nmethod sweeper only does partial sweep the sweeper's traversal
   // count can be greater than the stack traversal count before it hits the
@@ -2004,23 +2006,22 @@ void nmethod::oops_do_marking_epilogue() {
 
   nmethod* next = _oops_do_mark_nmethods;
   _oops_do_mark_nmethods = NULL;
-  if (next == NULL) {
-    return;
-  }
-  nmethod* cur;
-  do {
-    cur = next;
-    next = extract_nmethod(cur->_oops_do_mark_link);
-    cur->_oops_do_mark_link = NULL;
-    DEBUG_ONLY(cur->verify_oop_relocations());
+  if (next != NULL) {
+    nmethod* cur;
+    do {
+      cur = next;
+      next = extract_nmethod(cur->_oops_do_mark_link);
+      cur->_oops_do_mark_link = NULL;
+      DEBUG_ONLY(cur->verify_oop_relocations());
 
-    LogTarget(Trace, gc, nmethod) lt;
-    if (lt.is_enabled()) {
-      LogStream ls(lt);
-      CompileTask::print(&ls, cur, "oops_do, unmark", /*short_form:*/ true);
-    }
-    // End if self-loop has been detected.
-  } while (cur != next);
+      LogTarget(Trace, gc, nmethod) lt;
+      if (lt.is_enabled()) {
+        LogStream ls(lt);
+        CompileTask::print(&ls, cur, "oops_do, unmark", /*short_form:*/ true);
+      }
+      // End if self-loop has been detected.
+    } while (cur != next);
+  }
   log_trace(gc, nmethod)("oops_do_marking_epilogue");
 }
 
@@ -3151,12 +3152,10 @@ void nmethod::print_nmethod_labels(outputStream* stream, address block_begin, bo
           m->method_holder()->print_value_on(stream);
         } else {
           bool did_name = false;
-          if (!at_this && ss.is_object()) {
-            Symbol* name = ss.as_symbol_or_null();
-            if (name != NULL) {
-              name->print_value_on(stream);
-              did_name = true;
-            }
+          if (!at_this && ss.is_reference()) {
+            Symbol* name = ss.as_symbol();
+            name->print_value_on(stream);
+            did_name = true;
           }
           if (!did_name)
             stream->print("%s", type2name(t));

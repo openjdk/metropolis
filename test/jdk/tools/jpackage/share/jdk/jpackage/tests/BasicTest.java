@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2019, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -30,6 +30,7 @@ import java.util.List;
 import java.util.ArrayList;
 import java.util.function.Function;
 import java.util.function.Predicate;
+import java.util.function.Supplier;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -119,12 +120,15 @@ public final class BasicTest {
     @SuppressWarnings("unchecked")
     public void testVerbose() {
         JPackageCommand cmd = JPackageCommand.helloAppImage()
+                // Disable default logic adding `--verbose` option
+                // to jpackage command line.
+                .ignoreDefaultVerbose(true)
+                .saveConsoleOutput(true)
                 .setFakeRuntime().executePrerequisiteActions();
 
         List<String> expectedVerboseOutputStrings = new ArrayList<>();
         expectedVerboseOutputStrings.add("Creating app package:");
         if (TKit.isWindows()) {
-            expectedVerboseOutputStrings.add("Result application bundle:");
             expectedVerboseOutputStrings.add(
                     "Succeeded in building Windows Application Image package");
         } else if (TKit.isLinux()) {
@@ -139,17 +143,17 @@ public final class BasicTest {
         }
 
         TKit.deleteDirectoryContentsRecursive(cmd.outputDir());
-        List<String> nonVerboseOutput = cmd.createExecutor().executeAndGetOutput();
+        List<String> nonVerboseOutput = cmd.execute().getOutput();
         List<String>[] verboseOutput = (List<String>[])new List<?>[1];
 
         // Directory clean up is not 100% reliable on Windows because of
         // antivirus software that can lock .exe files. Setup
-        // diffreent output directory instead of cleaning the default one for
+        // different output directory instead of cleaning the default one for
         // verbose jpackage run.
         TKit.withTempDirectory("verbose-output", tempDir -> {
             cmd.setArgumentValue("--dest", tempDir);
-            verboseOutput[0] = cmd.createExecutor().addArgument(
-                    "--verbose").executeAndGetOutput();
+            cmd.addArgument("--verbose");
+            verboseOutput[0] = cmd.execute().getOutput();
         });
 
         TKit.assertTrue(nonVerboseOutput.size() < verboseOutput[0].size(),
@@ -189,13 +193,22 @@ public final class BasicTest {
     }
 
     @Test
-     // Regular app
+    // Regular app
     @Parameter("Hello")
-    // Modular app
+    // Modular app in .jar file
     @Parameter("com.other/com.other.Hello")
+    // Modular app in .jmod file
+    @Parameter("hello.jmod:com.other/com.other.Hello")
     public void testApp(String javaAppDesc) {
-        JPackageCommand.helloAppImage(javaAppDesc)
-        .executeAndAssertHelloAppImageCreated();
+        JavaAppDesc appDesc = JavaAppDesc.parse(javaAppDesc);
+        JPackageCommand cmd = JPackageCommand.helloAppImage(appDesc);
+        if (appDesc.jmodFileName() != null) {
+            // .jmod files are not supported at run-time. They should be
+            // bundled in Java run-time with jlink command, so disable
+            // use of external Java run-time if any configured.
+            cmd.ignoreDefaultRuntime(true);
+        }
+        cmd.executeAndAssertHelloAppImageCreated();
     }
 
     @Test
@@ -214,7 +227,8 @@ public final class BasicTest {
     @Parameter({ "java.desktop", "jdk.jartool" })
     public void testAddModules(String... addModulesArg) {
         JPackageCommand cmd = JPackageCommand
-                .helloAppImage("goodbye.jar:com.other/com.other.Hello");
+                .helloAppImage("goodbye.jar:com.other/com.other.Hello")
+                .ignoreDefaultRuntime(true); // because of --add-modules
         Stream.of(addModulesArg).map(v -> Stream.of("--add-modules", v)).flatMap(
                 s -> s).forEachOrdered(cmd::addArgument);
         cmd.executeAndAssertHelloAppImageCreated();
@@ -227,115 +241,66 @@ public final class BasicTest {
      */
     @Test
     public void testTemp() throws IOException {
-        TKit.withTempDirectory("temp-root", tempRoot -> {
-            Function<JPackageCommand, Path> getTempDir = cmd -> {
-                return tempRoot.resolve(cmd.outputBundle().getFileName());
-            };
+        final Path tempRoot = TKit.createTempDirectory("temp-root");
 
-            ThrowingConsumer<JPackageCommand> addTempDir = cmd -> {
+        Function<JPackageCommand, Path> getTempDir = cmd -> {
+            return tempRoot.resolve(cmd.outputBundle().getFileName());
+        };
+
+        Supplier<PackageTest> createTest = () -> {
+            return new PackageTest()
+            .configureHelloApp()
+            // Force save of package bundle in test work directory.
+            .addInitializer(JPackageCommand::setDefaultInputOutput)
+            .addInitializer(cmd -> {
                 Path tempDir = getTempDir.apply(cmd);
                 Files.createDirectories(tempDir);
                 cmd.addArguments("--temp", tempDir);
-            };
+            });
+        };
 
-            new PackageTest().configureHelloApp().addInitializer(addTempDir)
-            .addBundleVerifier(cmd -> {
-                // Check jpackage actually used the supplied directory.
-                Path tempDir = getTempDir.apply(cmd);
-                TKit.assertNotEquals(0, tempDir.toFile().list().length,
-                        String.format(
-                                "Check jpackage wrote some data in the supplied temporary directory [%s]",
-                                tempDir));
-            })
-            .run();
+        createTest.get()
+        .addBundleVerifier(cmd -> {
+            // Check jpackage actually used the supplied directory.
+            Path tempDir = getTempDir.apply(cmd);
+            TKit.assertNotEquals(0, tempDir.toFile().list().length,
+                    String.format(
+                            "Check jpackage wrote some data in the supplied temporary directory [%s]",
+                            tempDir));
+        })
+        .run(PackageTest.Action.CREATE);
 
-            new PackageTest().configureHelloApp().addInitializer(addTempDir)
-            .addInitializer(cmd -> {
-                // Clean output from the previus jpackage run.
-                Files.delete(cmd.outputBundle());
-            })
-            // Temporary directory should not be empty,
-            // jpackage should exit with error.
-            .setExpectedExitCode(1)
-            .run();
-        });
+        createTest.get()
+        // Temporary directory should not be empty,
+        // jpackage should exit with error.
+        .setExpectedExitCode(1)
+        .run(PackageTest.Action.CREATE);
     }
 
     @Test
     public void testAtFile() throws IOException {
-        JPackageCommand cmd = JPackageCommand.helloAppImage();
+        JPackageCommand cmd = JPackageCommand
+                .helloAppImage()
+                .setArgumentValue("--dest", TKit.createTempDirectory("output"));
 
         // Init options file with the list of options configured
         // for JPackageCommand instance.
-        final Path optionsFile = TKit.workDir().resolve("options");
+        final Path optionsFile = TKit.createTempFile(Path.of("options"));
         Files.write(optionsFile,
                 List.of(String.join(" ", cmd.getAllArguments())));
 
         // Build app jar file.
         cmd.executePrerequisiteActions();
 
-        // Make sure output directory is empty. Normally JPackageCommand would
-        // do this automatically.
-        TKit.deleteDirectoryContentsRecursive(cmd.outputDir());
-
         // Instead of running jpackage command through configured
         // JPackageCommand instance, run vanilla jpackage command with @ file.
         getJPackageToolProvider()
                 .addArgument(String.format("@%s", optionsFile))
-                .execute().assertExitCodeIsZero();
+                .execute();
 
         // Verify output of jpackage command.
         cmd.assertImageCreated();
         HelloApp.executeLauncherAndVerifyOutput(cmd);
-    }
-
-    @Parameter("Hello")
-    @Parameter("com.foo/com.foo.main.Aloha")
-    @Test
-    public void testJLinkRuntime(String javaAppDesc) {
-        JPackageCommand cmd = JPackageCommand.helloAppImage(javaAppDesc);
-
-        // If `--module` parameter was set on jpackage command line, get its
-        // value and extract module name.
-        // E.g.: foo.bar2/foo.bar.Buz -> foo.bar2
-        // Note: HelloApp class manages `--module` parameter on jpackage command line
-        final String moduleName = cmd.getArgumentValue("--module", () -> null,
-                (v) -> v.split("/", 2)[0]);
-
-        if (moduleName != null) {
-            // Build module jar.
-            cmd.executePrerequisiteActions();
-        }
-
-        TKit.withTempDirectory("runtime", tempDir -> {
-            final Path runtimeDir = tempDir.resolve("data");
-
-            // List of modules required for test app.
-            final var modules = new String[] {
-                "java.base",
-                "java.desktop"
-            };
-
-            Executor jlink = getToolProvider(JavaTool.JLINK)
-            .saveOutput(false)
-            .addArguments(
-                    "--add-modules", String.join(",", modules),
-                    "--output", runtimeDir.toString(),
-                    "--strip-debug",
-                    "--no-header-files",
-                    "--no-man-pages");
-
-            if (moduleName != null) {
-                jlink.addArguments("--add-modules", moduleName, "--module-path",
-                        Path.of(cmd.getArgumentValue("--module-path")).resolve(
-                                "hello.jar").toString());
-            }
-
-            jlink.execute().assertExitCodeIsZero();
-
-            cmd.addArguments("--runtime-image", runtimeDir);
-            cmd.executeAndAssertHelloAppImageCreated();
-        });
     }
 
     private static Executor getJPackageToolProvider() {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2003, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -31,6 +31,7 @@
 #include "classfile/vmSymbols.hpp"
 #include "interpreter/bytecodeStream.hpp"
 #include "interpreter/interpreter.hpp"
+#include "jfr/jfrEvents.hpp"
 #include "jvmtifiles/jvmtiEnv.hpp"
 #include "logging/log.hpp"
 #include "logging/logConfiguration.hpp"
@@ -213,7 +214,6 @@ jvmtiError
 JvmtiEnv::GetNamedModule(jobject class_loader, const char* package_name, jobject* module_ptr) {
   JavaThread* THREAD = JavaThread::current(); // pass to macros
   ResourceMark rm(THREAD);
-
   Handle h_loader (THREAD, JNIHandles::resolve(class_loader));
   // Check that loader is a subclass of java.lang.ClassLoader.
   if (h_loader.not_null() && !java_lang_ClassLoader::is_subclass(h_loader->klass())) {
@@ -446,9 +446,16 @@ JvmtiEnv::RetransformClasses(jint class_count, const jclass* classes) {
     }
     class_definitions[index].klass              = jcls;
   }
+  EventRetransformClasses event;
   VM_RedefineClasses op(class_count, class_definitions, jvmti_class_load_kind_retransform);
   VMThread::execute(&op);
-  return (op.check_error());
+  jvmtiError error = op.check_error();
+  if (error == JVMTI_ERROR_NONE) {
+    event.set_classCount(class_count);
+    event.set_redefinitionId(op.id());
+    event.commit();
+  }
+  return error;
 } /* end RetransformClasses */
 
 
@@ -457,9 +464,16 @@ JvmtiEnv::RetransformClasses(jint class_count, const jclass* classes) {
 jvmtiError
 JvmtiEnv::RedefineClasses(jint class_count, const jvmtiClassDefinition* class_definitions) {
 //TODO: add locking
+  EventRedefineClasses event;
   VM_RedefineClasses op(class_count, class_definitions, jvmti_class_load_kind_redefine);
   VMThread::execute(&op);
-  return (op.check_error());
+  jvmtiError error = op.check_error();
+  if (error == JVMTI_ERROR_NONE) {
+    event.set_classCount(class_count);
+    event.set_redefinitionId(op.id());
+    event.commit();
+  }
+  return error;
 } /* end RedefineClasses */
 
 
@@ -1193,14 +1207,13 @@ JvmtiEnv::GetOwnedMonitorInfo(JavaThread* java_thread, jint* owned_monitor_count
       new (ResourceObj::C_HEAP, mtInternal) GrowableArray<jvmtiMonitorStackDepthInfo*>(1, true);
 
   // It is only safe to perform the direct operation on the current
-  // thread. All other usage needs to use a vm-safepoint-op for safety.
+  // thread. All other usage needs to use a direct handshake for safety.
   if (java_thread == calling_thread) {
     err = get_owned_monitors(calling_thread, java_thread, owned_monitors_list);
   } else {
-    // JVMTI get monitors info at safepoint. Do not require target thread to
-    // be suspended.
-    VM_GetOwnedMonitorInfo op(this, calling_thread, java_thread, owned_monitors_list);
-    VMThread::execute(&op);
+    // get owned monitors info with handshake
+    GetOwnedMonitorInfoClosure op(calling_thread, this, owned_monitors_list);
+    Handshake::execute_direct(&op, java_thread);
     err = op.result();
   }
   jint owned_monitor_count = owned_monitors_list->length();
@@ -1232,21 +1245,20 @@ JvmtiEnv::GetOwnedMonitorInfo(JavaThread* java_thread, jint* owned_monitor_count
 jvmtiError
 JvmtiEnv::GetOwnedMonitorStackDepthInfo(JavaThread* java_thread, jint* monitor_info_count_ptr, jvmtiMonitorStackDepthInfo** monitor_info_ptr) {
   jvmtiError err = JVMTI_ERROR_NONE;
-  JavaThread* calling_thread  = JavaThread::current();
+  JavaThread* calling_thread = JavaThread::current();
 
   // growable array of jvmti monitors info on the C-heap
   GrowableArray<jvmtiMonitorStackDepthInfo*> *owned_monitors_list =
          new (ResourceObj::C_HEAP, mtInternal) GrowableArray<jvmtiMonitorStackDepthInfo*>(1, true);
 
   // It is only safe to perform the direct operation on the current
-  // thread. All other usage needs to use a vm-safepoint-op for safety.
+  // thread. All other usage needs to use a direct handshake for safety.
   if (java_thread == calling_thread) {
     err = get_owned_monitors(calling_thread, java_thread, owned_monitors_list);
   } else {
-    // JVMTI get owned monitors info at safepoint. Do not require target thread to
-    // be suspended.
-    VM_GetOwnedMonitorInfo op(this, calling_thread, java_thread, owned_monitors_list);
-    VMThread::execute(&op);
+    // get owned monitors info with handshake
+    GetOwnedMonitorInfoClosure op(calling_thread, this, owned_monitors_list);
+    Handshake::execute_direct(&op, java_thread);
     err = op.result();
   }
 
@@ -1281,16 +1293,16 @@ JvmtiEnv::GetOwnedMonitorStackDepthInfo(JavaThread* java_thread, jint* monitor_i
 jvmtiError
 JvmtiEnv::GetCurrentContendedMonitor(JavaThread* java_thread, jobject* monitor_ptr) {
   jvmtiError err = JVMTI_ERROR_NONE;
-  JavaThread* calling_thread  = JavaThread::current();
+  JavaThread* calling_thread = JavaThread::current();
 
   // It is only safe to perform the direct operation on the current
-  // thread. All other usage needs to use a vm-safepoint-op for safety.
+  // thread. All other usage needs to use a direct handshake for safety.
   if (java_thread == calling_thread) {
     err = get_current_contended_monitor(calling_thread, java_thread, monitor_ptr);
   } else {
-    // get contended monitor information at safepoint.
-    VM_GetCurrentContendedMonitor op(this, calling_thread, java_thread, monitor_ptr);
-    VMThread::execute(&op);
+    // get contended monitor information with handshake
+    GetCurrentContendedMonitorClosure op(calling_thread, this, monitor_ptr);
+    Handshake::execute_direct(&op, java_thread);
     err = op.result();
   }
   return err;
@@ -1330,7 +1342,7 @@ JvmtiEnv::RunAgentThread(jthread thread, jvmtiStartFunction proc, const void* ar
 
   Handle thread_hndl(current_thread, thread_oop);
   {
-    MutexLocker mu(Threads_lock); // grab Threads_lock
+    MutexLocker mu(current_thread, Threads_lock); // grab Threads_lock
 
     JvmtiAgentThread *new_thread = new JvmtiAgentThread(this, proc, arg);
 

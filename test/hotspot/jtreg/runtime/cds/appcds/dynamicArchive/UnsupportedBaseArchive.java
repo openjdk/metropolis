@@ -32,11 +32,10 @@ import java.nio.file.Paths;
  * @summary unsupported base archive tests
  * @requires vm.cds
  * @library /test/lib /test/hotspot/jtreg/runtime/cds/appcds /test/hotspot/jtreg/runtime/cds/appcds/test-classes
- * @modules jdk.jartool/sun.tools.jar
  * @compile ../test-classes/Hello.java
  * @build sun.hotspot.WhiteBox
- * @run driver ClassFileInstaller -jar WhiteBox.jar sun.hotspot.WhiteBox
- * @run driver UnsupportedBaseArchive
+ * @run driver ClassFileInstaller -jar WhiteBox.jar sun.hotspot.WhiteBox sun.hotspot.WhiteBox$WhiteBoxPermission
+ * @run main/othervm -XX:+UnlockDiagnosticVMOptions -XX:+WhiteBoxAPI -Xbootclasspath/a:./WhiteBox.jar UnsupportedBaseArchive
  */
 
 public class UnsupportedBaseArchive extends DynamicArchiveTestBase {
@@ -104,7 +103,7 @@ public class UnsupportedBaseArchive extends DynamicArchiveTestBase {
         // create a base archive with the --module-path option
         buildTestModule();
         baseArchiveName = getNewArchiveName("base-with-module");
-        dumpBaseArchive(baseArchiveName,
+        TestCommon.dumpBaseArchive(baseArchiveName,
                         "-cp", srcJar.toString(),
                         "--module-path", moduleDir.toString(),
                         "-m", TEST_MODULE);

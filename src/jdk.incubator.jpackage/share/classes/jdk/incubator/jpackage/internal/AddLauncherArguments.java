@@ -29,6 +29,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 import java.io.File;
+import java.util.List;
 import jdk.incubator.jpackage.internal.Arguments.CLIOptions;
 
 /*
@@ -86,36 +87,36 @@ class AddLauncherArguments {
         String module = getOptionValue(CLIOptions.MODULE);
 
         if (module != null && mainClass != null) {
-            putUnlessNull(bundleParams, CLIOptions.MODULE.getId(),
+            Arguments.putUnlessNull(bundleParams, CLIOptions.MODULE.getId(),
                     module + "/" + mainClass);
         } else if (module != null) {
-            putUnlessNull(bundleParams, CLIOptions.MODULE.getId(),
+            Arguments.putUnlessNull(bundleParams, CLIOptions.MODULE.getId(),
                     module);
         } else {
-            putUnlessNull(bundleParams, CLIOptions.MAIN_JAR.getId(),
+            Arguments.putUnlessNull(bundleParams, CLIOptions.MAIN_JAR.getId(),
                     mainJar);
-            putUnlessNull(bundleParams, CLIOptions.APPCLASS.getId(),
+            Arguments.putUnlessNull(bundleParams, CLIOptions.APPCLASS.getId(),
                     mainClass);
         }
 
-        putUnlessNull(bundleParams, CLIOptions.NAME.getId(),
+        Arguments.putUnlessNull(bundleParams, CLIOptions.NAME.getId(),
                 getOptionValue(CLIOptions.NAME));
 
-        putUnlessNull(bundleParams, CLIOptions.VERSION.getId(),
+        Arguments.putUnlessNull(bundleParams, CLIOptions.VERSION.getId(),
                 getOptionValue(CLIOptions.VERSION));
 
-        putUnlessNull(bundleParams, CLIOptions.RELEASE.getId(),
+        Arguments.putUnlessNull(bundleParams, CLIOptions.RELEASE.getId(),
                 getOptionValue(CLIOptions.RELEASE));
 
-        putUnlessNull(bundleParams, CLIOptions.LINUX_CATEGORY.getId(),
+        Arguments.putUnlessNull(bundleParams, CLIOptions.LINUX_CATEGORY.getId(),
                 getOptionValue(CLIOptions.LINUX_CATEGORY));
 
-        putUnlessNull(bundleParams,
+        Arguments.putUnlessNull(bundleParams,
                 CLIOptions.WIN_CONSOLE_HINT.getId(),
                 getOptionValue(CLIOptions.WIN_CONSOLE_HINT));
 
         String value = getOptionValue(CLIOptions.ICON);
-        putUnlessNull(bundleParams, CLIOptions.ICON.getId(),
+        Arguments.putUnlessNull(bundleParams, CLIOptions.ICON.getId(),
                 (value == null) ? null : new File(value));
 
         // "arguments" and "java-options" even if value is null:
@@ -151,17 +152,12 @@ class AddLauncherArguments {
         return bundleParams;
     }
 
-    private void putUnlessNull(Map<String, ? super Object> params,
-            String param, Object value) {
-        if (value != null) {
-            params.put(param, value);
-        }
-    }
-
     static Map<String, ? super Object> merge(
             Map<String, ? super Object> original,
-            Map<String, ? super Object> additional) {
+            Map<String, ? super Object> additional, String... exclude) {
         Map<String, ? super Object> tmp = new HashMap<>(original);
+        List.of(exclude).forEach(tmp::remove);
+
         if (additional.containsKey(CLIOptions.MODULE.getId())) {
             tmp.remove(CLIOptions.MAIN_JAR.getId());
             tmp.remove(CLIOptions.APPCLASS.getId());

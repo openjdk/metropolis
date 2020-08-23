@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2019, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -38,6 +38,11 @@ import java.util.stream.Stream;
 import jdk.jpackage.test.Functional.ThrowingSupplier;
 
 public final class Executor extends CommandArguments<Executor> {
+
+    public static Executor of(String... cmdline) {
+        return new Executor().setExecutable(cmdline[0]).addArguments(
+                Arrays.copyOfRange(cmdline, 1, cmdline.length));
+    }
 
     public Executor() {
         saveOutputType = new HashSet<>(Set.of(SaveOutputType.NONE));
@@ -166,11 +171,15 @@ public final class Executor extends CommandArguments<Executor> {
             return assertExitCodeIs(0);
         }
 
+        public int getExitCode() {
+            return exitCode;
+        }
+
         final int exitCode;
         private List<String> output;
     }
 
-    public Result execute() {
+    public Result executeWithoutExitCodeCheck() {
         if (toolProvider != null && directory != null) {
             throw new IllegalArgumentException(
                     "Can't change directory when using tool provider");
@@ -189,12 +198,48 @@ public final class Executor extends CommandArguments<Executor> {
         }).get();
     }
 
+    public Result execute(int expectedCode) {
+        return executeWithoutExitCodeCheck().assertExitCodeIs(expectedCode);
+    }
+
+    public Result execute() {
+        return execute(0);
+    }
+
     public String executeAndGetFirstLineOfOutput() {
-        return saveFirstLineOfOutput().execute().assertExitCodeIsZero().getFirstLineOfOutput();
+        return saveFirstLineOfOutput().execute().getFirstLineOfOutput();
     }
 
     public List<String> executeAndGetOutput() {
-        return saveOutput().execute().assertExitCodeIsZero().getOutput();
+        return saveOutput().execute().getOutput();
+    }
+
+    /*
+     * Repeates command "max" times and waits for "wait" seconds between each
+     * execution until command returns expected error code.
+     */
+    public Result executeAndRepeatUntilExitCode(int expectedCode, int max, int wait) {
+        Result result;
+        int count = 0;
+
+        do {
+            result = executeWithoutExitCodeCheck();
+            if (result.getExitCode() == expectedCode) {
+                return result;
+            }
+
+            try {
+                Thread.sleep(wait * 1000);
+            } catch (Exception ex) {} // Ignore
+
+            count++;
+        } while (count < max);
+
+        return result.assertExitCodeIs(expectedCode);
+    }
+
+    public List<String> executeWithoutExitCodeCheckAndGetOutput() {
+        return saveOutput().executeWithoutExitCodeCheck().getOutput();
     }
 
     private boolean withSavedOutput() {
@@ -203,7 +248,9 @@ public final class Executor extends CommandArguments<Executor> {
     }
 
     private Path executablePath() {
-        if (directory == null || executable.isAbsolute()) {
+        if (directory == null
+                || executable.isAbsolute()
+                || !Set.of(".", "..").contains(executable.getName(0).toString())) {
             return executable;
         }
 
@@ -237,7 +284,7 @@ public final class Executor extends CommandArguments<Executor> {
             sb.append(String.format("; in directory [%s]", directory));
         }
 
-        TKit.trace("Execute " + sb.toString() + "...");
+        trace("Execute " + sb.toString() + "...");
         Process process = builder.start();
 
         List<String> outputLines = null;
@@ -266,7 +313,7 @@ public final class Executor extends CommandArguments<Executor> {
         }
 
         Result reply = new Result(process.waitFor());
-        TKit.trace("Done. Exit code: " + reply.exitCode);
+        trace("Done. Exit code: " + reply.exitCode);
 
         if (outputLines != null) {
             reply.output = Collections.unmodifiableList(outputLines);
@@ -275,10 +322,10 @@ public final class Executor extends CommandArguments<Executor> {
     }
 
     private Result runToolProvider(PrintStream out, PrintStream err) {
-        TKit.trace("Execute " + getPrintableCommandLine() + "...");
+        trace("Execute " + getPrintableCommandLine() + "...");
         Result reply = new Result(toolProvider.run(out, err, args.toArray(
                 String[]::new)));
-        TKit.trace("Done. Exit code: " + reply.exitCode);
+        trace("Done. Exit code: " + reply.exitCode);
         return reply;
     }
 
@@ -351,6 +398,10 @@ public final class Executor extends CommandArguments<Executor> {
         return Stream.concat(Stream.of(executable), args.stream()).map(
                 v -> (v.isEmpty() || regex.matcher(v).find()) ? "\"" + v + "\"" : v).collect(
                         Collectors.joining(" "));
+    }
+
+    private static void trace(String msg) {
+        TKit.trace(String.format("exec: %s", msg));
     }
 
     private ToolProvider toolProvider;

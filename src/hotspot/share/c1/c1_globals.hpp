@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2000, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -42,8 +42,7 @@
                  diagnostic_pd, \
                  notproduct, \
                  range, \
-                 constraint, \
-                 writeable) \
+                 constraint) \
                                                                             \
   /* Printing */                                                            \
   notproduct(bool, PrintC1Statistics, false,                                \
@@ -171,8 +170,27 @@
   develop(bool, UseTableRanges, true,                                       \
           "Faster versions of lookup table using ranges")                   \
                                                                             \
-  develop_pd(bool, RoundFPResults,                                          \
-          "Indicates whether rounding is needed for floating point results")\
+  product(intx, C1MaxInlineSize, 35,                                        \
+          "The maximum bytecode size of a method to be inlined by C1")      \
+          range(0, max_jint)                                                \
+                                                                            \
+  product(intx, C1MaxTrivialSize, 6,                                        \
+          "The maximum bytecode size of a trivial method to be inlined by " \
+          "C1")                                                             \
+          range(0, max_jint)                                                \
+                                                                            \
+  product(intx, C1MaxInlineLevel, 9,                                        \
+          "The maximum number of nested calls that are inlined by C1")      \
+          range(0, max_jint)                                                \
+                                                                            \
+  product(intx, C1MaxRecursiveInlineLevel, 1,                               \
+          "maximum number of nested recursive calls that are inlined by C1")\
+          range(0, max_jint)                                                \
+                                                                            \
+  product(intx, C1InlineStackLimit, 10,                                     \
+          "inlining only allowed for methods which don't exceed this "      \
+          "number of expression stack and local slots")                     \
+          range(0, max_jint)                                                \
                                                                             \
   develop(intx, NestedInliningSizeRatio, 90,                                \
           "Percentage of prev. allowed inline size in recursive inlining")  \
@@ -192,9 +210,6 @@
                                                                             \
   develop(bool, LIRTraceExecution, false,                                   \
           "add LIR code which logs the execution of blocks")                \
-                                                                            \
-  product_pd(bool, LIRFillDelaySlots,                                       \
-             "fill delays on on SPARC with LIR")                            \
                                                                             \
   develop_pd(bool, CSEArrayLength,                                          \
           "Create separate nodes for length in array accesses")             \

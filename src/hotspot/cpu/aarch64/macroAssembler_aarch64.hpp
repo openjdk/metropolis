@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 1997, 2019, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2014, 2019, Red Hat Inc. All rights reserved.
+ * Copyright (c) 1997, 2020, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2014, 2020, Red Hat Inc. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -28,6 +28,7 @@
 
 #include "asm/assembler.hpp"
 #include "oops/compressedOops.hpp"
+#include "utilities/powerOfTwo.hpp"
 
 // MacroAssembler extends Assembler by frequently used macros.
 //
@@ -80,17 +81,20 @@ class MacroAssembler: public Assembler {
 
   void call_VM_helper(Register oop_result, address entry_point, int number_of_arguments, bool check_exceptions = true);
 
-  // True if an XOR can be used to expand narrow klass references.
-  bool use_XOR_for_compressed_class_base;
+  enum KlassDecodeMode {
+    KlassDecodeNone,
+    KlassDecodeZero,
+    KlassDecodeXor,
+    KlassDecodeMovk
+  };
+
+  KlassDecodeMode klass_decode_mode();
+
+ private:
+  static KlassDecodeMode _klass_decode_mode;
 
  public:
-  MacroAssembler(CodeBuffer* code) : Assembler(code) {
-    use_XOR_for_compressed_class_base
-      = operand_valid_for_logical_immediate
-           (/*is32*/false, (uint64_t)CompressedKlassPointers::base())
-         && ((uint64_t)CompressedKlassPointers::base()
-             > (1UL << log2_intptr(CompressedKlassPointers::range())));
-  }
+  MacroAssembler(CodeBuffer* code) : Assembler(code) {}
 
  // These routines should emit JVMTI PopFrame and ForceEarlyReturn handling code.
  // The implementation is only non-empty for the InterpreterMacroAssembler,
@@ -133,6 +137,20 @@ class MacroAssembler: public Assembler {
     a.lea(this, r);
   }
 
+  /* Sometimes we get misaligned loads and stores, usually from Unsafe
+     accesses, and these can exceed the offset range. */
+  Address legitimize_address(const Address &a, int size, Register scratch) {
+    if (a.getMode() == Address::base_plus_offset) {
+      if (! Address::offset_ok_for_immed(a.offset(), exact_log2(size))) {
+        block_comment("legitimize_address {");
+        lea(scratch, a);
+        block_comment("} legitimize_address");
+        return Address(scratch);
+      }
+    }
+    return a;
+  }
+
   void addmw(Address a, Register incr, Register scratch) {
     ldrw(scratch, a);
     addw(scratch, scratch, incr);
@@ -158,6 +176,8 @@ class MacroAssembler: public Assembler {
 
   using Assembler::ldr;
   using Assembler::str;
+  using Assembler::ldrw;
+  using Assembler::strw;
 
   void ldr(Register Rx, const Address &adr);
   void ldrw(Register Rw, const Address &adr);
@@ -791,6 +811,7 @@ public:
   // C 'boolean' to Java boolean: x == 0 ? 0 : 1
   void c2bool(Register x);
 
+  void load_method_holder_cld(Register rresult, Register rmethod);
   void load_method_holder(Register holder, Register method);
 
   // oop manipulations
@@ -798,6 +819,7 @@ public:
   void store_klass(Register dst, Register src);
   void cmp_klass(Register oop, Register trial_klass, Register tmp);
 
+  void resolve_weak_handle(Register result, Register tmp);
   void resolve_oop_handle(Register result, Register tmp = r5);
   void load_mirror(Register dst, Register method, Register tmp = r5);
 
@@ -957,9 +979,6 @@ public:
 
   // prints msg, dumps registers and stops execution
   void stop(const char* msg);
-
-  // prints msg and continues
-  void warn(const char* msg);
 
   static void debug64(char* msg, int64_t pc, int64_t regs[]);
 
@@ -1199,20 +1218,15 @@ public:
     }
   }
 
-  address read_polling_page(Register r, address page, relocInfo::relocType rtype);
   address read_polling_page(Register r, relocInfo::relocType rtype);
-  void get_polling_page(Register dest, address page, relocInfo::relocType rtype);
+  void get_polling_page(Register dest, relocInfo::relocType rtype);
+  address fetch_and_read_polling_page(Register r, relocInfo::relocType rtype);
 
   // CRC32 code for java.util.zip.CRC32::updateBytes() instrinsic.
   void update_byte_crc32(Register crc, Register val, Register table);
   void update_word_crc32(Register crc, Register v, Register tmp,
         Register table0, Register table1, Register table2, Register table3,
         bool upper = false);
-
-  void string_compare(Register str1, Register str2,
-                      Register cnt1, Register cnt2, Register result,
-                      Register tmp1, Register tmp2, FloatRegister vtmp1,
-                      FloatRegister vtmp2, FloatRegister vtmp3, int ae);
 
   void has_negatives(Register ary1, Register len, Register result);
 
@@ -1242,15 +1256,6 @@ public:
                         Register len, Register result,
                         FloatRegister Vtmp1, FloatRegister Vtmp2,
                         FloatRegister Vtmp3, FloatRegister Vtmp4);
-  void string_indexof(Register str1, Register str2,
-                      Register cnt1, Register cnt2,
-                      Register tmp1, Register tmp2,
-                      Register tmp3, Register tmp4,
-                      Register tmp5, Register tmp6,
-                      int int_cnt1, Register result, int ae);
-  void string_indexof_char(Register str1, Register cnt1,
-                           Register ch, Register result,
-                           Register tmp1, Register tmp2, Register tmp3);
   void fast_log(FloatRegister vtmp0, FloatRegister vtmp1, FloatRegister vtmp2,
                 FloatRegister vtmp3, FloatRegister vtmp4, FloatRegister vtmp5,
                 FloatRegister tmpC1, FloatRegister tmpC2, FloatRegister tmpC3,

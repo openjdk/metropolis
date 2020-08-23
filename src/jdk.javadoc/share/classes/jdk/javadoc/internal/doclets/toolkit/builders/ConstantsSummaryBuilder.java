@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2003, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -96,7 +96,7 @@ public class ConstantsSummaryBuilder extends AbstractBuilder {
         super(context);
         this.writer = writer;
         this.typeElementsWithConstFields = new HashSet<>();
-        this.printedPackageHeaders = new TreeSet<>(utils.makePackageComparator());
+        this.printedPackageHeaders = new TreeSet<>(utils.comparators.makePackageComparator());
     }
 
     /**
@@ -111,10 +111,6 @@ public class ConstantsSummaryBuilder extends AbstractBuilder {
         return new ConstantsSummaryBuilder(context, writer);
     }
 
-    /**
-     * {@inheritDoc}
-     * @throws DocletException if there is a problem while building the documentation
-     */
     @Override
     public void build() throws DocletException {
         if (writer == null) {
@@ -319,7 +315,7 @@ public class ConstantsSummaryBuilder extends AbstractBuilder {
             members.addAll(vmt.getVisibleMembers(FIELDS));
             members.addAll(vmt.getVisibleMembers(ENUM_CONSTANTS));
             SortedSet<VariableElement> includes =
-                    new TreeSet<>(utils.makeGeneralPurposeComparator());
+                    new TreeSet<>(utils.comparators.makeGeneralPurposeComparator());
             for (Element element : members) {
                 VariableElement member = (VariableElement)element;
                 if (member.getConstantValue() != null) {

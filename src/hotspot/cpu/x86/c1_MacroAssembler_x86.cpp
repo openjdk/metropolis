@@ -53,7 +53,8 @@ int C1_MacroAssembler::lock_object(Register hdr, Register obj, Register disp_hdr
 
   if (UseBiasedLocking) {
     assert(scratch != noreg, "should have scratch register at this point");
-    null_check_offset = biased_locking_enter(disp_hdr, obj, hdr, scratch, false, done, &slow_case);
+    Register rklass_decode_tmp = LP64_ONLY(rscratch1) NOT_LP64(noreg);
+    null_check_offset = biased_locking_enter(disp_hdr, obj, hdr, scratch, rklass_decode_tmp, false, done, &slow_case);
   } else {
     null_check_offset = offset();
   }
@@ -150,6 +151,7 @@ void C1_MacroAssembler::try_allocate(Register obj, Register var_size_in_bytes, i
 
 void C1_MacroAssembler::initialize_header(Register obj, Register klass, Register len, Register t1, Register t2) {
   assert_different_registers(obj, klass, len);
+  Register tmp_encode_klass = LP64_ONLY(rscratch1) NOT_LP64(noreg);
   if (UseBiasedLocking && !len->is_valid()) {
     assert_different_registers(obj, klass, len, t1, t2);
     movptr(t1, Address(klass, Klass::prototype_header_offset()));
@@ -161,7 +163,7 @@ void C1_MacroAssembler::initialize_header(Register obj, Register klass, Register
 #ifdef _LP64
   if (UseCompressedClassPointers) { // Take care not to kill klass
     movptr(t1, klass);
-    encode_klass_not_null(t1);
+    encode_klass_not_null(t1, tmp_encode_klass);
     movl(Address(obj, oopDesc::klass_offset_in_bytes()), t1);
   } else
 #endif
@@ -296,9 +298,10 @@ void C1_MacroAssembler::inline_cache_check(Register receiver, Register iCache) {
   // check against inline cache
   assert(!MacroAssembler::needs_explicit_null_check(oopDesc::klass_offset_in_bytes()), "must add explicit null check");
   int start_offset = offset();
+  Register tmp_load_klass = LP64_ONLY(rscratch2) NOT_LP64(noreg);
 
   if (UseCompressedClassPointers) {
-    load_klass(rscratch1, receiver);
+    load_klass(rscratch1, receiver, tmp_load_klass);
     cmpptr(rscratch1, iCache);
   } else {
     cmpptr(iCache, Address(receiver, oopDesc::klass_offset_in_bytes()));
@@ -325,12 +328,12 @@ void C1_MacroAssembler::build_frame(int frame_size_in_bytes, int bang_size_in_by
   if (PreserveFramePointer) {
     mov(rbp, rsp);
   }
-#ifdef TIERED
-  // c2 leaves fpu stack dirty. Clean it on entry
+#if !defined(_LP64) && defined(TIERED)
   if (UseSSE < 2 ) {
+    // c2 leaves fpu stack dirty. Clean it on entry
     empty_FPU_stack();
   }
-#endif // TIERED
+#endif // !_LP64 && TIERED
   decrement(rsp, frame_size_in_bytes); // does not emit code for frame_size == 0
 
   BarrierSetAssembler* bs = BarrierSet::barrier_set()->barrier_set_assembler();
@@ -357,7 +360,7 @@ void C1_MacroAssembler::verified_entry() {
   }
   if (C1Breakpoint)int3();
   // build frame
-  verify_FPU(0, "method_entry");
+  IA32_ONLY( verify_FPU(0, "method_entry"); )
 }
 
 void C1_MacroAssembler::load_parameter(int offset_in_words, Register reg) {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1999, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1999, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -86,7 +86,7 @@ ciField::ciField(ciInstanceKlass* klass, int index) :
   Symbol* signature = cpool->symbol_at(sig_index);
   _signature = ciEnv::current(THREAD)->get_symbol(signature);
 
-  BasicType field_type = FieldType::basic_type(signature);
+  BasicType field_type = Signature::basic_type(signature);
 
   // If the field is a pointer type, get the klass of the
   // field.
@@ -223,12 +223,16 @@ static bool trust_final_non_static_fields(ciInstanceKlass* holder) {
       holder->is_in_package("jdk/internal/foreign") || holder->is_in_package("jdk/incubator/foreign") ||
       holder->is_in_package("java/lang"))
     return true;
-  // Trust VM unsafe anonymous classes. They are private API (jdk.internal.misc.Unsafe)
-  // and can't be serialized, so there is no hacking of finals going on with them.
-  if (holder->is_unsafe_anonymous())
+  // Trust hidden classes and VM unsafe anonymous classes. They are created via
+  // Lookup.defineHiddenClass or the private jdk.internal.misc.Unsafe API and
+  // can't be serialized, so there is no hacking of finals going on with them.
+  if (holder->is_hidden() || holder->is_unsafe_anonymous())
     return true;
   // Trust final fields in all boxed classes
   if (holder->is_box_klass())
+    return true;
+  // Trust final fields in records
+  if (holder->is_record())
     return true;
   // Trust final fields in String
   if (holder->name() == ciSymbol::java_lang_String())
@@ -264,9 +268,9 @@ void ciField::initialize_from(fieldDescriptor* fd) {
       assert(SystemDictionary::System_klass() != NULL, "Check once per vm");
       if (k == SystemDictionary::System_klass()) {
         // Check offsets for case 2: System.in, System.out, or System.err
-        if( _offset == java_lang_System::in_offset_in_bytes()  ||
-            _offset == java_lang_System::out_offset_in_bytes() ||
-            _offset == java_lang_System::err_offset_in_bytes() ) {
+        if (_offset == java_lang_System::in_offset()  ||
+            _offset == java_lang_System::out_offset() ||
+            _offset == java_lang_System::err_offset()) {
           _is_constant = false;
           return;
         }
@@ -282,7 +286,7 @@ void ciField::initialize_from(fieldDescriptor* fd) {
     // For CallSite objects treat the target field as a compile time constant.
     assert(SystemDictionary::CallSite_klass() != NULL, "should be already initialized");
     if (k == SystemDictionary::CallSite_klass() &&
-        _offset == java_lang_invoke_CallSite::target_offset_in_bytes()) {
+        _offset == java_lang_invoke_CallSite::target_offset()) {
       assert(!has_initialized_final_update(), "CallSite is not supposed to have writes to final fields outside initializers");
       _is_constant = true;
     } else {

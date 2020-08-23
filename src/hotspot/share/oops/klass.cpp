@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -29,10 +29,10 @@
 #include "classfile/javaClasses.hpp"
 #include "classfile/moduleEntry.hpp"
 #include "classfile/systemDictionary.hpp"
+#include "classfile/systemDictionaryShared.hpp"
 #include "classfile/vmSymbols.hpp"
 #include "gc/shared/collectedHeap.inline.hpp"
 #include "logging/log.hpp"
-#include "memory/heapInspection.hpp"
 #include "memory/heapShared.hpp"
 #include "memory/metadataFactory.hpp"
 #include "memory/metaspaceClosure.hpp"
@@ -48,6 +48,7 @@
 #include "runtime/atomic.hpp"
 #include "runtime/handles.inline.hpp"
 #include "utilities/macros.hpp"
+#include "utilities/powerOfTwo.hpp"
 #include "utilities/stack.inline.hpp"
 
 void Klass::set_java_mirror(Handle m) {
@@ -79,6 +80,10 @@ void Klass::set_is_cloneable() {
 void Klass::set_name(Symbol* n) {
   _name = n;
   if (_name != NULL) _name->increment_refcount();
+
+  if (Arguments::is_dumping_archive() && is_instance_klass()) {
+    SystemDictionaryShared::init_dumptime_info(InstanceKlass::cast(this));
+  }
 }
 
 bool Klass::is_subclass_of(const Klass* k) const {
@@ -92,6 +97,10 @@ bool Klass::is_subclass_of(const Klass* k) const {
     t = t->super();
   }
   return false;
+}
+
+void Klass::release_C_heap_structures() {
+  if (_name != NULL) _name->decrement_refcount();
 }
 
 bool Klass::search_secondary_supers(Klass* k) const {
@@ -413,7 +422,9 @@ void Klass::set_next_sibling(Klass* s) {
 }
 
 void Klass::append_to_sibling_list() {
-  assert_locked_or_safepoint(Compile_lock);
+  if (Universe::is_fully_initialized()) {
+    assert_locked_or_safepoint(Compile_lock);
+  }
   debug_only(verify();)
   // add ourselves to superklass' subklass list
   InstanceKlass* super = superklass();
@@ -544,7 +555,7 @@ void Klass::remove_java_mirror() {
     log_trace(cds, unshareable)("remove java_mirror: %s", external_name());
   }
   // Just null out the mirror.  The class_loader_data() no longer exists.
-  _java_mirror = NULL;
+  _java_mirror = OopHandle();
 }
 
 void Klass::restore_unshareable_info(ClassLoaderData* loader_data, Handle protection_domain, TRAPS) {
@@ -598,7 +609,7 @@ void Klass::restore_unshareable_info(ClassLoaderData* loader_data, Handle protec
 
     // No archived mirror data
     log_debug(cds, mirror)("No archived mirror data for %s", external_name());
-    _java_mirror = NULL;
+    _java_mirror = OopHandle();
     this->clear_has_raw_archived_mirror();
   }
 
@@ -606,7 +617,7 @@ void Klass::restore_unshareable_info(ClassLoaderData* loader_data, Handle protec
   // gotten an OOM later but keep the mirror if it was created.
   if (java_mirror() == NULL) {
     log_trace(cds, mirror)("Recreate mirror for %s", external_name());
-    java_lang_Class::create_mirror(this, loader, module_handle, protection_domain, CHECK);
+    java_lang_Class::create_mirror(this, loader, module_handle, protection_domain, Handle(), CHECK);
   }
 }
 
@@ -670,6 +681,20 @@ void Klass::check_array_allocation_length(int length, int max_length, TRAPS) {
   }
 }
 
+// Replace the last '+' char with '/'.
+static char* convert_hidden_name_to_java(Symbol* name) {
+  size_t name_len = name->utf8_length();
+  char* result = NEW_RESOURCE_ARRAY(char, name_len + 1);
+  name->as_klass_external_name(result, (int)name_len + 1);
+  for (int index = (int)name_len; index > 0; index--) {
+    if (result[index] == '+') {
+      result[index] = JVM_SIGNATURE_SLASH;
+      break;
+    }
+  }
+  return result;
+}
+
 // In product mode, this function doesn't have virtual function calls so
 // there might be some performance advantage to handling InstanceKlass here.
 const char* Klass::external_name() const {
@@ -686,7 +711,14 @@ const char* Klass::external_name() const {
       strcpy(result + name_len, addr_buf);
       assert(strlen(result) == name_len + addr_len, "");
       return result;
+
+    } else if (ik->is_hidden()) {
+      char* result = convert_hidden_name_to_java(name());
+      return result;
     }
+  } else if (is_objArray_klass() && ObjArrayKlass::cast(this)->bottom_klass()->is_hidden()) {
+    char* result = convert_hidden_name_to_java(name());
+    return result;
   }
   if (name() == NULL)  return "<unknown>";
   return name()->as_klass_external_name();
@@ -694,6 +726,18 @@ const char* Klass::external_name() const {
 
 const char* Klass::signature_name() const {
   if (name() == NULL)  return "<unknown>";
+  if (is_objArray_klass() && ObjArrayKlass::cast(this)->bottom_klass()->is_hidden()) {
+    size_t name_len = name()->utf8_length();
+    char* result = NEW_RESOURCE_ARRAY(char, name_len + 1);
+    name()->as_C_string(result, (int)name_len + 1);
+    for (int index = (int)name_len; index > 0; index--) {
+      if (result[index] == '+') {
+        result[index] = JVM_SIGNATURE_DOT;
+        break;
+      }
+    }
+    return result;
+  }
   return name()->as_C_string();
 }
 
@@ -730,6 +774,7 @@ void Klass::print_on(outputStream* st) const {
 
 #define BULLET  " - "
 
+// Caller needs ResourceMark
 void Klass::oop_print_on(oop obj, outputStream* st) {
   // print title
   st->print_cr("%s ", internal_name());
@@ -755,18 +800,6 @@ void Klass::oop_print_value_on(oop obj, outputStream* st) {
   st->print("%s", internal_name());
   obj->print_address_on(st);
 }
-
-#if INCLUDE_SERVICES
-// Size Statistics
-void Klass::collect_statistics(KlassSizeStats *sz) const {
-  sz->_klass_bytes = sz->count(this);
-  sz->_mirror_bytes = sz->count(java_mirror_no_keepalive());
-  sz->_secondary_supers_bytes = sz->count_array(secondary_supers());
-
-  sz->_ro_bytes += sz->_secondary_supers_bytes;
-  sz->_rw_bytes += sz->_klass_bytes + sz->_mirror_bytes;
-}
-#endif // INCLUDE_SERVICES
 
 // Verification
 

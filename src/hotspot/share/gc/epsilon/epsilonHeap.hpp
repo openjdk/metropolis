@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017, 2018, Red Hat, Inc. All rights reserved.
+ * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 only, as
@@ -51,7 +52,8 @@ public:
   static EpsilonHeap* heap();
 
   EpsilonHeap() :
-          _memory_manager("Epsilon Heap", "") {};
+          _memory_manager("Epsilon Heap", ""),
+          _space(NULL) {};
 
   virtual Name kind() const {
     return CollectedHeap::Epsilon;
@@ -115,7 +117,6 @@ public:
   bool block_is_obj(const HeapWord* addr) const { return false; }
 
   // No GC threads
-  virtual void print_gc_threads_on(outputStream* st) const {}
   virtual void gc_threads_do(ThreadClosure* tc) const {}
 
   // No nmethod handling

@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2019, Red Hat, Inc. All rights reserved.
+ * Copyright (c) 2019, 2020, Red Hat, Inc. All rights reserved.
+ * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 only, as
@@ -28,7 +29,6 @@
 #include "gc/shenandoah/shenandoahClosures.hpp"
 #include "gc/shenandoah/shenandoahHeap.inline.hpp"
 #include "gc/shenandoah/shenandoahNMethod.inline.hpp"
-#include "gc/shenandoah/shenandoahTraversalGC.hpp"
 #include "oops/compressedOops.inline.hpp"
 #include "runtime/atomic.hpp"
 #include "runtime/thread.hpp"
@@ -42,9 +42,7 @@ bool ShenandoahForwardedIsAliveClosure::do_object_b(oop obj) {
     return false;
   }
   obj = ShenandoahBarrierSet::resolve_forwarded_not_null(obj);
-  shenandoah_assert_not_forwarded_if(NULL, obj,
-                                     (ShenandoahHeap::heap()->is_concurrent_mark_in_progress() ||
-                                     ShenandoahHeap::heap()->is_concurrent_traversal_in_progress()));
+  shenandoah_assert_not_forwarded_if(NULL, obj, ShenandoahHeap::heap()->is_concurrent_mark_in_progress());
   return _mark_context->is_marked(obj);
 }
 
@@ -82,36 +80,17 @@ void ShenandoahUpdateRefsClosure::do_oop_work(T* p) {
 void ShenandoahUpdateRefsClosure::do_oop(oop* p)       { do_oop_work(p); }
 void ShenandoahUpdateRefsClosure::do_oop(narrowOop* p) { do_oop_work(p); }
 
-ShenandoahTraversalUpdateRefsClosure::ShenandoahTraversalUpdateRefsClosure() :
-  _heap(ShenandoahHeap::heap()),
-  _traversal_set(ShenandoahHeap::heap()->traversal_gc()->traversal_set()) {
-  assert(_heap->is_traversal_mode(), "Why we here?");
-}
-
-template <class T>
-void ShenandoahTraversalUpdateRefsClosure::do_oop_work(T* p) {
-  T o = RawAccess<>::oop_load(p);
-  if (!CompressedOops::is_null(o)) {
-    oop obj = CompressedOops::decode_not_null(o);
-    if (_heap->in_collection_set(obj) || _traversal_set->is_in((HeapWord*)obj)) {
-      obj = ShenandoahBarrierSet::resolve_forwarded_not_null(obj);
-      RawAccess<IS_NOT_NULL>::oop_store(p, obj);
-    } else {
-      shenandoah_assert_not_forwarded(p, obj);
-    }
-  }
-}
-
-void ShenandoahTraversalUpdateRefsClosure::do_oop(oop* p)       { do_oop_work(p); }
-void ShenandoahTraversalUpdateRefsClosure::do_oop(narrowOop* p) { do_oop_work(p); }
-
-ShenandoahEvacuateUpdateRootsClosure::ShenandoahEvacuateUpdateRootsClosure() :
+template <DecoratorSet MO>
+ShenandoahEvacuateUpdateRootsClosure<MO>::ShenandoahEvacuateUpdateRootsClosure() :
   _heap(ShenandoahHeap::heap()), _thread(Thread::current()) {
 }
 
+template <DecoratorSet MO>
 template <class T>
-void ShenandoahEvacuateUpdateRootsClosure::do_oop_work(T* p) {
-  assert(_heap->is_concurrent_root_in_progress(), "Only do this when evacuation is in progress");
+void ShenandoahEvacuateUpdateRootsClosure<MO>::do_oop_work(T* p) {
+  assert(_heap->is_concurrent_weak_root_in_progress() ||
+         _heap->is_concurrent_strong_root_in_progress(),
+         "Only do this in root processing phase");
 
   T o = RawAccess<>::oop_load(p);
   if (! CompressedOops::is_null(o)) {
@@ -123,15 +102,17 @@ void ShenandoahEvacuateUpdateRootsClosure::do_oop_work(T* p) {
       if (resolved == obj) {
         resolved = _heap->evacuate_object(obj, _thread);
       }
-      RawAccess<IS_NOT_NULL>::oop_store(p, resolved);
+      RawAccess<IS_NOT_NULL | MO>::oop_store(p, resolved);
     }
   }
 }
-void ShenandoahEvacuateUpdateRootsClosure::do_oop(oop* p) {
+template <DecoratorSet MO>
+void ShenandoahEvacuateUpdateRootsClosure<MO>::do_oop(oop* p) {
   do_oop_work(p);
 }
 
-void ShenandoahEvacuateUpdateRootsClosure::do_oop(narrowOop* p) {
+template <DecoratorSet MO>
+void ShenandoahEvacuateUpdateRootsClosure<MO>::do_oop(narrowOop* p) {
   do_oop_work(p);
 }
 
@@ -140,7 +121,9 @@ ShenandoahEvacUpdateOopStorageRootsClosure::ShenandoahEvacUpdateOopStorageRootsC
 }
 
 void ShenandoahEvacUpdateOopStorageRootsClosure::do_oop(oop* p) {
-  assert(_heap->is_concurrent_root_in_progress(), "Only do this when evacuation is in progress");
+  assert(_heap->is_concurrent_weak_root_in_progress() ||
+         _heap->is_concurrent_strong_root_in_progress(),
+         "Only do this in root processing phase");
 
   oop obj = RawAccess<>::oop_load(p);
   if (! CompressedOops::is_null(obj)) {
@@ -173,6 +156,13 @@ void ShenandoahCodeBlobAndDisarmClosure::do_code_blob(CodeBlob* cb) {
     CodeBlobToOopClosure::do_code_blob(cb);
     _bs->disarm(nm);
   }
+}
+
+ShenandoahRendezvousClosure::ShenandoahRendezvousClosure() :
+  HandshakeClosure("ShenandoahRendezvous") {
+}
+
+void ShenandoahRendezvousClosure::do_thread(Thread* thread) {
 }
 
 #ifdef ASSERT

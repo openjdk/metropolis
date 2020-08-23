@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2015, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -31,6 +31,7 @@ import jdk.test.lib.cli.*;
  * @summary Test that various options are deprecated. See deprecated_jvm_flags in arguments.cpp.
  * @modules java.base/jdk.internal.misc
  * @library /test/lib
+ * @run driver VMDeprecatedOptions
  */
 public class VMDeprecatedOptions {
 
@@ -46,9 +47,16 @@ public class VMDeprecatedOptions {
         {"InitialRAMFraction",        "64"},
         {"TLABStats",                 "false"},
         {"AllowRedefinitionToAddDeleteMethods", "true"},
-        {"CompactFields", "true"},
-        {"FieldsAllocationStyle", "1"},
-        {"UseParallelOldGC", "false"},
+        {"PrintVMQWaitTime",          "true"},
+        {"UseNewFieldLayout",         "true"},
+        {"UseBiasedLocking",                    "false"},
+        {"BiasedLockingStartupDelay",           "0"},
+        {"BiasedLockingBulkRebiasThreshold",    "20"},
+        {"BiasedLockingBulkRevokeThreshold",    "40"},
+        {"BiasedLockingDecayTime",              "25000"},
+        {"UseOptoBiasInlining",                 "true"},
+        {"InitialBootClassLoaderMetaspaceSize", "2200000"},
+        {"UseLargePagesInMetaspace",            "true"},
 
         // deprecated alias flags (see also aliased_jvm_flags):
         {"DefaultMaxRAMFraction", "4"},

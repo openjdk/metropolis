@@ -42,6 +42,7 @@
 #include "runtime/stubCodeGenerator.hpp"
 #include "runtime/stubRoutines.hpp"
 #include "runtime/thread.inline.hpp"
+#include "utilities/powerOfTwo.hpp"
 
 // Declaration and definition of StubGenerator (no .hpp file).
 // For a more detailed description of the stub routine structure
@@ -2336,6 +2337,10 @@ class StubGenerator: public StubCodeGenerator {
 
     // Comapct string intrinsics: Translate table for string inflate intrinsic. Used by trot instruction.
     StubRoutines::zarch::_trot_table_addr = (address)StubRoutines::zarch::_trot_table;
+
+    // safefetch stubs
+    generate_safefetch("SafeFetch32", sizeof(int),      &StubRoutines::_safefetch32_entry, &StubRoutines::_safefetch32_fault_pc, &StubRoutines::_safefetch32_continuation_pc);
+    generate_safefetch("SafeFetchN",  sizeof(intptr_t), &StubRoutines::_safefetchN_entry,  &StubRoutines::_safefetchN_fault_pc,  &StubRoutines::_safefetchN_continuation_pc);
   }
 
 
@@ -2354,10 +2359,6 @@ class StubGenerator: public StubCodeGenerator {
 
     // Arraycopy stubs used by compilers.
     generate_arraycopy_stubs();
-
-    // safefetch stubs
-    generate_safefetch("SafeFetch32", sizeof(int),      &StubRoutines::_safefetch32_entry, &StubRoutines::_safefetch32_fault_pc, &StubRoutines::_safefetch32_continuation_pc);
-    generate_safefetch("SafeFetchN",  sizeof(intptr_t), &StubRoutines::_safefetchN_entry,  &StubRoutines::_safefetchN_fault_pc,  &StubRoutines::_safefetchN_continuation_pc);
 
     // Generate AES intrinsics code.
     if (UseAESIntrinsics) {

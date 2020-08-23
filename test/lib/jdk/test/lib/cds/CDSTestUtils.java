@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2017, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -40,8 +40,6 @@ public class CDSTestUtils {
         "UseSharedSpaces: Unable to allocate region, range is not within java heap.";
     public static final String MSG_RANGE_ALREADT_IN_USE =
         "Unable to allocate region, java heap range is already in use.";
-    public static final String MSG_COMPRESSION_MUST_BE_USED =
-        "Unable to use shared archive: UseCompressedOops and UseCompressedClassPointers must be on for UseSharedSpaces.";
 
     public static final boolean DYNAMIC_DUMP = Boolean.getBoolean("test.dynamic.cds.archive");
 
@@ -258,7 +256,7 @@ public class CDSTestUtils {
         for (String s : opts.suffix) cmd.add(s);
 
         String[] cmdLine = cmd.toArray(new String[cmd.size()]);
-        ProcessBuilder pb = ProcessTools.createJavaProcessBuilder(true, cmdLine);
+        ProcessBuilder pb = ProcessTools.createTestJvm(cmdLine);
         return executeAndLog(pb, "dump");
     }
 
@@ -285,6 +283,12 @@ public class CDSTestUtils {
         return output;
     }
 
+    // check result of dumping base archive
+    public static OutputAnalyzer checkBaseDump(OutputAnalyzer output) throws Exception {
+        output.shouldContain("Loading classes to share");
+        output.shouldHaveExitValue(0);
+        return output;
+    }
 
     // A commonly used convenience methods to create an archive and check the results
     // Creates an archive and checks for errors
@@ -416,7 +420,7 @@ public class CDSTestUtils {
         for (String s : opts.suffix) cmd.add(s);
 
         String[] cmdLine = cmd.toArray(new String[cmd.size()]);
-        ProcessBuilder pb = ProcessTools.createJavaProcessBuilder(true, cmdLine);
+        ProcessBuilder pb = ProcessTools.createTestJvm(cmdLine);
         return executeAndLog(pb, "exec");
     }
 
@@ -495,7 +499,7 @@ public class CDSTestUtils {
     // create file containing the specified class list
     public static File makeClassList(String classes[])
         throws Exception {
-        return makeClassList(getTestName() + "-", classes);
+        return makeClassList(testName + "-", classes);
     }
 
     // create file containing the specified class list
@@ -525,18 +529,7 @@ public class CDSTestUtils {
         }
     }
 
-
-    // Optimization for getting a test name.
-    // Test name does not change during execution of the test,
-    // but getTestName() uses stack walking hence it is expensive.
-    // Therefore cache it and reuse it.
-    private static String testName;
-    public static String getTestName() {
-        if (testName == null) {
-            testName = Utils.getTestName();
-        }
-        return testName;
-    }
+    private static String testName = Utils.TEST_NAME.replace('/', '.');
 
     private static final SimpleDateFormat timeStampFormat =
         new SimpleDateFormat("HH'h'mm'm'ss's'SSS");
@@ -545,7 +538,7 @@ public class CDSTestUtils {
 
     // Call this method to start new archive with new unique name
     public static void startNewArchiveName() {
-        defaultArchiveName = getTestName() +
+        defaultArchiveName = testName +
             timeStampFormat.format(new Date()) + ".jsa";
     }
 
@@ -557,7 +550,7 @@ public class CDSTestUtils {
     // ===================== FILE ACCESS convenience methods
     public static File getOutputFile(String name) {
         File dir = new File(System.getProperty("test.classes", "."));
-        return new File(dir, getTestName() + "-" + name);
+        return new File(dir, testName + "-" + name);
     }
 
 
@@ -578,7 +571,7 @@ public class CDSTestUtils {
         long started = System.currentTimeMillis();
         OutputAnalyzer output = new OutputAnalyzer(pb.start());
         String outputFileNamePrefix =
-            getTestName() + "-" + String.format("%04d", getNextLogCounter()) + "-" + logName;
+            testName + "-" + String.format("%04d", getNextLogCounter()) + "-" + logName;
 
         writeFile(getOutputFile(outputFileNamePrefix + ".stdout"), output.getStdout());
         writeFile(getOutputFile(outputFileNamePrefix + ".stderr"), output.getStderr());

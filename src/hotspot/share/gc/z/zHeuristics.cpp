@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2019, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -22,12 +22,13 @@
  */
 
 #include "precompiled.hpp"
+#include "gc/shared/gcLogPrecious.hpp"
 #include "gc/z/zCPU.inline.hpp"
 #include "gc/z/zGlobals.hpp"
 #include "gc/z/zHeuristics.hpp"
-#include "logging/log.hpp"
 #include "runtime/globals.hpp"
 #include "runtime/os.hpp"
+#include "utilities/globalDefinitions.hpp"
 #include "utilities/powerOfTwo.hpp"
 
 void ZHeuristics::set_medium_page_size() {
@@ -38,7 +39,7 @@ void ZHeuristics::set_medium_page_size() {
   const size_t min = ZGranuleSize;
   const size_t max = ZGranuleSize * 16;
   const size_t unclamped = MaxHeapSize * 0.03125;
-  const size_t clamped = MIN2(MAX2(min, unclamped), max);
+  const size_t clamped = clamp(unclamped, min, max);
   const size_t size = round_down_power_of_2(clamped);
 
   if (size > ZPageSizeSmall) {
@@ -48,11 +49,16 @@ void ZHeuristics::set_medium_page_size() {
     ZObjectSizeLimitMedium      = ZPageSizeMedium / 8;
     ZObjectAlignmentMediumShift = (int)ZPageSizeMediumShift - 13;
     ZObjectAlignmentMedium      = 1 << ZObjectAlignmentMediumShift;
-
-    log_info(gc, init)("Medium Page Size: " SIZE_FORMAT "M", ZPageSizeMedium / M);
-  } else {
-    log_info(gc, init)("Medium Page Size: N/A");
   }
+}
+
+size_t ZHeuristics::max_reserve() {
+  // Reserve one small page per worker plus one shared medium page. This is
+  // still just an estimate and doesn't guarantee that we can't run out of
+  // memory during relocation.
+  const uint nworkers = MAX2(ParallelGCThreads, ConcGCThreads);
+  const size_t reserve = (nworkers * ZPageSizeSmall) + ZPageSizeMedium;
+  return MIN2(MaxHeapSize, reserve);
 }
 
 bool ZHeuristics::use_per_cpu_shared_small_pages() {

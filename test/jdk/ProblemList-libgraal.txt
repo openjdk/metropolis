@@ -45,6 +45,9 @@ com/sun/crypto/provider/Cipher/Blowfish/TestCipherBlowfish.java         8239960 
 
 com/sun/crypto/provider/Cipher/CTR/CounterMode.java                     8239958   generic-all
 com/sun/crypto/provider/Cipher/DES/TestCipherDES.java                   8239958   generic-all
+com/sun/crypto/provider/Cipher/PBE/PBEParametersTest.java               8239958   generic-all
+com/sun/crypto/provider/Cipher/PBE/PKCS12Cipher.java                    8239958   generic-all
+com/sun/crypto/provider/Cipher/PBE/TestCipherKeyWrapperPBEKey.java      8239958   generic-all
 com/sun/crypto/provider/Cipher/TextLength/TestCipherTextLength.java     8239958   generic-all
 
 java/lang/invoke/lambda/LogGeneratedClassesTest.java                    8239961   generic-all
@@ -63,6 +66,23 @@ com/sun/jdi/RedefineCrossStart.java                                     8195635 
 com/sun/jdi/RedefineG.java                                              8195635   generic-all
 com/sun/jdi/RedefineTTYLineNumber.java                                  8195635   generic-all
 
+#
+com/sun/jdi/ArrayLengthDumpTest.java                                    8251562   generic-all
+com/sun/jdi/BreakpointWithFullGC.java                                   8251562   generic-all
+com/sun/jdi/DeferredStepTest.java                                       8251562   generic-all
+com/sun/jdi/EvalArgs.java                                               8251562   generic-all
+com/sun/jdi/EvalArraysAsList.java                                       8251562   generic-all
+com/sun/jdi/JdbMethodExitTest.java                                      8251562   generic-all
+com/sun/jdi/JdbStopInNotificationThreadTest.java                        8251562   generic-all
+com/sun/jdi/RedefineAbstractClass.java                                  8251562   generic-all
+com/sun/jdi/RedefineAnnotation.java                                     8251562   generic-all
+com/sun/jdi/RedefineChangeClassOrder.java                               8251562   generic-all
+com/sun/jdi/RedefineException.java                                      8251562   generic-all
+com/sun/jdi/RedefineIntConstantToLong.java                              8251562   generic-all
+com/sun/jdi/RedefineNestmateAttr/TestNestmateAttr.java                  8251562   generic-all
+com/sun/jdi/ResumeOneThreadTest.java                                    8251562   generic-all
+
+#
 sun/nio/ch/TestMaxCachedBufferSize.java                                 8239949   generic-all
 
 api/java_awt/Robot/constructor.html                                     8238939   generic-all

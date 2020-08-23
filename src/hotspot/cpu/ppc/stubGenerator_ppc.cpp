@@ -41,6 +41,7 @@
 #include "runtime/stubRoutines.hpp"
 #include "runtime/thread.inline.hpp"
 #include "utilities/align.hpp"
+#include "utilities/powerOfTwo.hpp"
 
 // Declaration and definition of StubGenerator (no .hpp file).
 // For a more detailed description of the stub routine structure
@@ -546,7 +547,7 @@ class StubGenerator: public StubCodeGenerator {
     address frame_complete_pc = __ pc();
 
     if (restore_saved_exception_pc) {
-      __ unimplemented("StubGenerator::throw_exception with restore_saved_exception_pc", 74);
+      __ unimplemented("StubGenerator::throw_exception with restore_saved_exception_pc");
     }
 
     // Note that we always have a runtime stub frame on the top of
@@ -920,7 +921,7 @@ class StubGenerator: public StubCodeGenerator {
   inline void assert_positive_int(Register count) {
 #ifdef ASSERT
     __ srdi_(R0, count, 31);
-    __ asm_assert_eq("missing zero extend", 0xAFFE);
+    __ asm_assert_eq("missing zero extend");
 #endif
   }
 
@@ -2180,7 +2181,7 @@ class StubGenerator: public StubCodeGenerator {
     // Overlaps if Src before dst and distance smaller than size.
     // Branch to forward copy routine otherwise.
     __ blt(CCR0, no_overlap);
-    __ stop("overlap in checkcast_copy", 0x9543);
+    __ stop("overlap in checkcast_copy");
     __ bind(no_overlap);
     }
 #endif
@@ -3026,8 +3027,8 @@ class StubGenerator: public StubCodeGenerator {
     address start = __ function_entry();
 
     __ sha256 (multi_block);
-
     __ blr();
+
     return start;
   }
 
@@ -3037,8 +3038,36 @@ class StubGenerator: public StubCodeGenerator {
     address start = __ function_entry();
 
     __ sha512 (multi_block);
-
     __ blr();
+
+    return start;
+  }
+
+  address generate_data_cache_writeback() {
+    const Register cacheline = R3_ARG1;
+    StubCodeMark mark(this, "StubRoutines", "_data_cache_writeback");
+    address start = __ pc();
+
+    __ cache_wb(Address(cacheline));
+    __ blr();
+
+    return start;
+  }
+
+  address generate_data_cache_writeback_sync() {
+    const Register is_presync = R3_ARG1;
+    Register temp = R4;
+    Label SKIP;
+
+    StubCodeMark mark(this, "StubRoutines", "_data_cache_writeback_sync");
+    address start = __ pc();
+
+    __ andi_(temp, is_presync, 1);
+    __ bne(CCR0, SKIP);
+    __ cache_wbsync(false); // post sync => emit 'sync'
+    __ bind(SKIP);          // pre sync => emit nothing
+    __ blr();
+
     return start;
   }
 
@@ -3548,6 +3577,14 @@ class StubGenerator: public StubCodeGenerator {
       StubRoutines::_crc32c_table_addr = StubRoutines::generate_crc_constants(REVERSE_CRC32C_POLY);
       StubRoutines::_updateBytesCRC32C = generate_CRC32_updateBytes(true);
     }
+
+    // Safefetch stubs.
+    generate_safefetch("SafeFetch32", sizeof(int),     &StubRoutines::_safefetch32_entry,
+                                                       &StubRoutines::_safefetch32_fault_pc,
+                                                       &StubRoutines::_safefetch32_continuation_pc);
+    generate_safefetch("SafeFetchN", sizeof(intptr_t), &StubRoutines::_safefetchN_entry,
+                                                       &StubRoutines::_safefetchN_fault_pc,
+                                                       &StubRoutines::_safefetchN_continuation_pc);
   }
 
   void generate_all() {
@@ -3565,14 +3602,6 @@ class StubGenerator: public StubCodeGenerator {
 
     // arraycopy stubs used by compilers
     generate_arraycopy_stubs();
-
-    // Safefetch stubs.
-    generate_safefetch("SafeFetch32", sizeof(int),     &StubRoutines::_safefetch32_entry,
-                                                       &StubRoutines::_safefetch32_fault_pc,
-                                                       &StubRoutines::_safefetch32_continuation_pc);
-    generate_safefetch("SafeFetchN", sizeof(intptr_t), &StubRoutines::_safefetchN_entry,
-                                                       &StubRoutines::_safefetchN_fault_pc,
-                                                       &StubRoutines::_safefetchN_continuation_pc);
 
 #ifdef COMPILER2
     if (UseMultiplyToLenIntrinsic) {
@@ -3593,6 +3622,12 @@ class StubGenerator: public StubCodeGenerator {
         = CAST_FROM_FN_PTR(address, SharedRuntime::montgomery_square);
     }
 #endif
+
+    // data cache line writeback
+    if (VM_Version::supports_data_cache_line_flush()) {
+      StubRoutines::_data_cache_writeback = generate_data_cache_writeback();
+      StubRoutines::_data_cache_writeback_sync = generate_data_cache_writeback_sync();
+    }
 
     if (UseAESIntrinsics) {
       StubRoutines::_aescrypt_encryptBlock = generate_aescrypt_encryptBlock();

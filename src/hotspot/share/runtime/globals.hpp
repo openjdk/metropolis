@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -104,17 +104,6 @@
 //
 // constraint is a macro that will expand to custom function call
 //    for constraint checking if provided - see jvmFlagConstraintList.hpp
-//
-// writeable is a macro that controls if and how the value can change during the runtime
-//
-// writeable(Always) is optional and allows the flag to have its value changed
-//    without any limitations at any time
-//
-// writeable(Once) flag value's can be only set once during the lifetime of VM
-//
-// writeable(CommandLineOnly) flag value's can be only set from command line
-//    (multiple times allowed)
-//
 
 // Default and minimum StringTable and SymbolTable size values
 // Must be powers of 2
@@ -135,8 +124,7 @@ const size_t minimumSymbolTableSize = 1024;
                       product_rw, \
                       lp64_product, \
                       range, \
-                      constraint, \
-                      writeable) \
+                      constraint) \
                                                                             \
   lp64_product(bool, UseCompressedOops, false,                              \
           "Use 32-bit object references in 64-bit VM. "                     \
@@ -190,7 +178,7 @@ const size_t minimumSymbolTableSize = 1024;
           "Fail large pages individual allocation")                         \
                                                                             \
   product(bool, UseLargePagesInMetaspace, false,                            \
-          "Use large page memory in metaspace. "                            \
+          "(Deprecated) Use large page memory in metaspace. "               \
           "Only used if UseLargePages is enabled.")                         \
                                                                             \
   product(bool, UseNUMA, false,                                             \
@@ -204,7 +192,7 @@ const size_t minimumSymbolTableSize = 1024;
           range(os::vm_allocation_granularity(), NOT_LP64(2*G) LP64_ONLY(8192*G)) \
                                                                             \
   product(bool, ForceNUMA, false,                                           \
-          "Force NUMA optimizations on single-node/UMA systems")            \
+          "(Deprecated) Force NUMA optimizations on single-node/UMA systems") \
                                                                             \
   product(uintx, NUMAChunkResizeWeight, 20,                                 \
           "Percentage (0-100) used to weight the current sample when "      \
@@ -225,10 +213,6 @@ const size_t minimumSymbolTableSize = 1024;
   product(uintx, NUMAPageScanRate, 256,                                     \
           "Maximum number of pages to include in the page scan procedure")  \
           range(0, max_uintx)                                               \
-                                                                            \
-  product(intx, UseSSE, 99,                                                 \
-          "Highest supported SSE instructions set on x86/x64")              \
-          range(0, 99)                                                      \
                                                                             \
   product(bool, UseAES, false,                                              \
           "Control whether AES instructions are used when available")       \
@@ -279,7 +263,7 @@ const size_t minimumSymbolTableSize = 1024;
           "compilation")                                                    \
                                                                             \
   product(bool, PrintVMQWaitTime, false,                                    \
-          "Print out the waiting time in VM operation queue")               \
+          "(Deprecated) Print out the waiting time in VM operation queue")  \
                                                                             \
   product(bool, MethodFlushing, true,                                       \
           "Reclamation of zombie and not-entrant methods")                  \
@@ -425,7 +409,7 @@ const size_t minimumSymbolTableSize = 1024;
           "Trace external suspend wait failures")                           \
                                                                             \
   product(bool, MaxFDLimit, true,                                           \
-          "Bump the number of file descriptors to maximum in Solaris")      \
+          "Bump the number of file descriptors to maximum (Unix only)")     \
                                                                             \
   diagnostic(bool, LogEvents, true,                                         \
           "Enable the various ring buffer event logs")                      \
@@ -633,7 +617,7 @@ const size_t minimumSymbolTableSize = 1024;
   product(bool, OmitStackTraceInFastThrow, true,                            \
           "Omit backtraces for some 'hot' exceptions in optimized code")    \
                                                                             \
-  manageable(bool, ShowCodeDetailsInExceptionMessages, false,               \
+  manageable(bool, ShowCodeDetailsInExceptionMessages, true,                \
           "Show exception messages from RuntimeExceptions that contain "    \
           "snippets of the failing code. Disable this to improve privacy.") \
                                                                             \
@@ -695,26 +679,25 @@ const size_t minimumSymbolTableSize = 1024;
   product_pd(bool, DontYieldALot,                                           \
           "Throw away obvious excess yield calls")                          \
                                                                             \
-  develop(bool, UseDetachedThreads, true,                                   \
-          "Use detached threads that are recycled upon termination "        \
-          "(for Solaris only)")                                             \
-                                                                            \
   experimental(bool, DisablePrimordialThreadGuardPages, false,              \
                "Disable the use of stack guard pages if the JVM is loaded " \
                "on the primordial process thread")                          \
                                                                             \
-  product(bool, UseLWPSynchronization, true,                                \
-          "Use LWP-based instead of libthread-based synchronization "       \
-          "(SPARC only)")                                                   \
+  diagnostic(bool, AsyncDeflateIdleMonitors, true,                          \
+          "Deflate idle monitors using the ServiceThread.")                 \
                                                                             \
-  product(intx, MonitorBound, 0, "(Deprecated) Bound Monitor population")   \
+  /* notice: the max range value here is max_jint, not max_intx  */         \
+  /* because of overflow issue                                   */         \
+  diagnostic(intx, AsyncDeflationInterval, 250,                             \
+          "Async deflate idle monitors every so many milliseconds when "    \
+          "MonitorUsedDeflationThreshold is exceeded (0 is off).")          \
           range(0, max_jint)                                                \
                                                                             \
   experimental(intx, MonitorUsedDeflationThreshold, 90,                     \
-                "Percentage of used monitors before triggering cleanup "    \
-                "safepoint which deflates monitors (0 is off). "            \
-                "The check is performed on GuaranteedSafepointInterval.")   \
-                range(0, 100)                                               \
+          "Percentage of used monitors before triggering deflation (0 is "  \
+          "off). The check is performed on GuaranteedSafepointInterval "    \
+          "or AsyncDeflationInterval.")                                     \
+          range(0, 100)                                                     \
                                                                             \
   experimental(intx, hashCode, 5,                                           \
                "(Unstable) select hashCode generation algorithm")           \
@@ -722,10 +705,6 @@ const size_t minimumSymbolTableSize = 1024;
   product(bool, FilterSpuriousWakeups, true,                                \
           "When true prevents OS-level spurious, or premature, wakeups "    \
           "from Object.wait (Ignored for Windows)")                         \
-                                                                            \
-  develop(bool, UsePthreads, false,                                         \
-          "Use pthread-based instead of libthread-based synchronization "   \
-          "(SPARC only)")                                                   \
                                                                             \
   product(bool, ReduceSignalUsage, false,                                   \
           "Reduce the use of OS signals in Java and/or the VM")             \
@@ -742,11 +721,11 @@ const size_t minimumSymbolTableSize = 1024;
                                                                             \
   product(bool, AllowUserSignalHandlers, false,                             \
           "Do not complain if the application installs signal handlers "    \
-          "(Solaris & Linux only)")                                         \
+          "(Unix only)")                                                    \
                                                                             \
   product(bool, UseSignalChaining, true,                                    \
           "Use signal-chaining to invoke signal handlers installed "        \
-          "by the application (Solaris & Linux only)")                      \
+          "by the application (Unix only)")                                 \
                                                                             \
   product(bool, RestoreMXCSROnJNICalls, false,                              \
           "Restore MXCSR when returning from JNI calls")                    \
@@ -778,16 +757,6 @@ const size_t minimumSymbolTableSize = 1024;
   product(bool, UseXMMForArrayCopy, false,                                  \
           "Use SSE2 MOVQ instruction for Arraycopy")                        \
                                                                             \
-  product(intx, FieldsAllocationStyle, 1,                                   \
-          "(Deprecated) 0 - type based with oops first, "                   \
-          "1 - with oops last, "                                            \
-          "2 - oops in super and sub classes are together")                 \
-          range(0, 2)                                                       \
-                                                                            \
-  product(bool, CompactFields, true,                                        \
-          "(Deprecated) Allocate nonstatic fields in gaps "                 \
-          "between previous fields")                                        \
-                                                                            \
   notproduct(bool, PrintFieldLayout, false,                                 \
           "Print field layout for each class")                              \
                                                                             \
@@ -806,32 +775,34 @@ const size_t minimumSymbolTableSize = 1024;
   product(bool, RestrictContended, true,                                    \
           "Restrict @Contended to trusted classes")                         \
                                                                             \
-  product(bool, UseBiasedLocking, true,                                     \
-          "Enable biased locking in JVM")                                   \
+  product(bool, UseBiasedLocking, false,                                    \
+          "(Deprecated) Enable biased locking in JVM")                      \
                                                                             \
   product(intx, BiasedLockingStartupDelay, 0,                               \
-          "Number of milliseconds to wait before enabling biased locking")  \
+          "(Deprecated) Number of milliseconds to wait before enabling "    \
+          "biased locking")                                                 \
           range(0, (intx)(max_jint-(max_jint%PeriodicTask::interval_gran))) \
           constraint(BiasedLockingStartupDelayFunc,AfterErgo)               \
                                                                             \
   diagnostic(bool, PrintBiasedLockingStatistics, false,                     \
-          "Print statistics of biased locking in JVM")                      \
+          "(Deprecated) Print statistics of biased locking in JVM")         \
                                                                             \
   product(intx, BiasedLockingBulkRebiasThreshold, 20,                       \
-          "Threshold of number of revocations per type to try to "          \
-          "rebias all objects in the heap of that type")                    \
+          "(Deprecated) Threshold of number of revocations per type to "    \
+          "try to rebias all objects in the heap of that type")             \
           range(0, max_intx)                                                \
           constraint(BiasedLockingBulkRebiasThresholdFunc,AfterErgo)        \
                                                                             \
   product(intx, BiasedLockingBulkRevokeThreshold, 40,                       \
-          "Threshold of number of revocations per type to permanently "     \
-          "revoke biases of all objects in the heap of that type")          \
+          "(Deprecated) Threshold of number of revocations per type to "    \
+          "permanently revoke biases of all objects in the heap of that "   \
+          "type")                                                           \
           range(0, max_intx)                                                \
           constraint(BiasedLockingBulkRevokeThresholdFunc,AfterErgo)        \
                                                                             \
   product(intx, BiasedLockingDecayTime, 25000,                              \
-          "Decay time (in milliseconds) to re-enable bulk rebiasing of a "  \
-          "type after previous bulk rebias")                                \
+          "(Deprecated) Decay time (in milliseconds) to re-enable bulk "    \
+          "rebiasing of a type after previous bulk rebias")                 \
           range(500, max_intx)                                              \
           constraint(BiasedLockingDecayTimeFunc,AfterErgo)                  \
                                                                             \
@@ -922,7 +893,7 @@ const size_t minimumSymbolTableSize = 1024;
                                                                             \
   product(size_t, InitialBootClassLoaderMetaspaceSize,                      \
           NOT_LP64(2200*K) LP64_ONLY(4*M),                                  \
-          "Initial size of the boot class loader data metaspace")           \
+          "(Deprecated) Initial size of the boot class loader data metaspace") \
           range(30*K, max_uintx/BytesPerWord)                               \
           constraint(InitialBootClassLoaderMetaspaceSizeConstraintFunc, AfterErgo)\
                                                                             \
@@ -1015,9 +986,6 @@ const size_t minimumSymbolTableSize = 1024;
           "use stack banging for stack overflow checks (required for "      \
           "proper StackOverflow handling; disable only to measure cost "    \
           "of stackbanging)")                                               \
-                                                                            \
-  develop(bool, UseStrictFP, true,                                          \
-          "use strict fp if modifier strictfp is set")                      \
                                                                             \
   develop(bool, GenerateSynchronizationCode, true,                          \
           "generate locking/unlocking code for synchronized methods and "   \
@@ -1485,34 +1453,9 @@ const size_t minimumSymbolTableSize = 1024;
   notproduct(intx, MaxSubklassPrintSize, 4,                                 \
           "maximum number of subklasses to print when printing klass")      \
                                                                             \
-  product(intx, MaxInlineLevel, 15,                                         \
-          "maximum number of nested calls that are inlined")                \
-          range(0, max_jint)                                                \
-                                                                            \
-  product(intx, MaxRecursiveInlineLevel, 1,                                 \
-          "maximum number of nested recursive calls that are inlined")      \
-          range(0, max_jint)                                                \
-                                                                            \
   develop(intx, MaxForceInlineLevel, 100,                                   \
           "maximum number of nested calls that are forced for inlining "    \
           "(using CompileCommand or marked w/ @ForceInline)")               \
-          range(0, max_jint)                                                \
-                                                                            \
-  product_pd(intx, InlineSmallCode,                                         \
-          "Only inline already compiled methods if their code size is "     \
-          "less than this")                                                 \
-          range(0, max_jint)                                                \
-                                                                            \
-  product(intx, MaxInlineSize, 35,                                          \
-          "The maximum bytecode size of a method to be inlined")            \
-          range(0, max_jint)                                                \
-                                                                            \
-  product_pd(intx, FreqInlineSize,                                          \
-          "The maximum bytecode size of a frequent method to be inlined")   \
-          range(0, max_jint)                                                \
-                                                                            \
-  product(intx, MaxTrivialSize, 6,                                          \
-          "The maximum bytecode size of a trivial method to be inlined")    \
           range(0, max_jint)                                                \
                                                                             \
   product(intx, MinInliningThreshold, 250,                                  \
@@ -1749,6 +1692,11 @@ const size_t minimumSymbolTableSize = 1024;
   product(bool, UseCodeCacheFlushing, true,                                 \
           "Remove cold/old nmethods from the code cache")                   \
                                                                             \
+  product(double, SweeperThreshold, 0.5,                                    \
+          "Threshold controlling when code cache sweeper is invoked."       \
+          "Value is percentage of ReservedCodeCacheSize.")                  \
+          range(0.0, 100.0)                                                 \
+                                                                            \
   product(uintx, StartAggressiveSweepingAt, 10,                             \
           "Start aggressive sweeping if X[%] of the code cache is free."    \
           "Segmented code cache: X[%] of the non-profiled heap."            \
@@ -1862,10 +1810,8 @@ const size_t minimumSymbolTableSize = 1024;
   product(intx, ThreadPriorityPolicy, 0,                                    \
           "0 : Normal.                                                     "\
           "    VM chooses priorities that are appropriate for normal       "\
-          "    applications. On Solaris NORM_PRIORITY and above are mapped "\
-          "    to normal native priority. Java priorities below "           \
-          "    NORM_PRIORITY map to lower native priority values. On       "\
-          "    Windows applications are allowed to use higher native       "\
+          "    applications.                                               "\
+          "    On Windows applications are allowed to use higher native    "\
           "    priorities. However, with ThreadPriorityPolicy=0, VM will   "\
           "    not use the highest possible native priority,               "\
           "    THREAD_PRIORITY_TIME_CRITICAL, as it may interfere with     "\
@@ -1890,7 +1836,6 @@ const size_t minimumSymbolTableSize = 1024;
           "The native priority at which compiler threads should run "       \
           "(-1 means no change)")                                           \
           range(min_jint, max_jint)                                         \
-          constraint(CompilerThreadPriorityConstraintFunc, AfterErgo)       \
                                                                             \
   product(intx, VMThreadPriority, -1,                                       \
           "The native priority at which the VM thread should run "          \
@@ -2327,9 +2272,6 @@ const size_t minimumSymbolTableSize = 1024;
   diagnostic(bool, PrintMethodHandleStubs, false,                           \
           "Print generated stub code for method handles")                   \
                                                                             \
-  develop(bool, TraceMethodHandles, false,                                  \
-          "trace internal method handle operations")                        \
-                                                                            \
   diagnostic(bool, VerifyMethodHandles, trueInDebug,                        \
           "perform extra checks when constructing method handles")          \
                                                                             \
@@ -2341,9 +2283,6 @@ const size_t minimumSymbolTableSize = 1024;
                                                                             \
   diagnostic(bool, FoldStableValues, true,                                  \
           "Optimize loads from stable fields (marked w/ @Stable)")          \
-                                                                            \
-  develop(bool, TraceInvokeDynamic, false,                                  \
-          "trace internal invoke dynamic operations")                       \
                                                                             \
   diagnostic(int, UseBootstrapCallInfo, 1,                                  \
           "0: when resolving InDy or ConDy, force all BSM arguments to be " \
@@ -2434,8 +2373,7 @@ const size_t minimumSymbolTableSize = 1024;
            "do not map the archive")                                        \
            range(0, 2)                                                      \
                                                                             \
-  experimental(size_t, ArrayAllocatorMallocLimit,                           \
-          SOLARIS_ONLY(64*K) NOT_SOLARIS((size_t)-1),                       \
+  experimental(size_t, ArrayAllocatorMallocLimit, (size_t)-1,               \
           "Allocation less than this value will be allocated "              \
           "using malloc. Larger allocations will use mmap.")                \
                                                                             \
@@ -2510,7 +2448,16 @@ const size_t minimumSymbolTableSize = 1024;
           "Start flight recording with options"))                           \
                                                                             \
   experimental(bool, UseFastUnorderedTimeStamps, false,                     \
-          "Use platform unstable time where supported for timestamps only")
+          "Use platform unstable time where supported for timestamps only") \
+                                                                            \
+  product(bool, UseNewFieldLayout, true,                                    \
+               "(Deprecated) Use new algorithm to compute field layouts")   \
+                                                                            \
+  product(bool, UseEmptySlotsInSupers, true,                                \
+                "Allow allocating fields in empty slots of super-classes")  \
+                                                                            \
+  diagnostic(bool, DeoptimizeNMethodBarriersALot, false,                    \
+                "Make nmethod barriers deoptimise a lot.")                  \
 
 // Interface macros
 #define DECLARE_PRODUCT_FLAG(type, name, value, doc)      extern "C" type name;
@@ -2548,7 +2495,6 @@ ALL_FLAGS(DECLARE_DEVELOPER_FLAG,     \
           DECLARE_PRODUCT_RW_FLAG,    \
           DECLARE_LP64_PRODUCT_FLAG,  \
           IGNORE_RANGE,               \
-          IGNORE_CONSTRAINT,          \
-          IGNORE_WRITEABLE)
+          IGNORE_CONSTRAINT)
 
 #endif // SHARE_RUNTIME_GLOBALS_HPP

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -68,7 +68,7 @@ void ServiceThread::initialize() {
                           CHECK);
 
   {
-    MutexLocker mu(Threads_lock);
+    MutexLocker mu(THREAD, Threads_lock);
     ServiceThread* thread =  new ServiceThread(&service_thread_entry);
 
     // At this point it may be possible that no osthread was created for the
@@ -110,6 +110,7 @@ void ServiceThread::service_thread_entry(JavaThread* jt, TRAPS) {
     bool thread_id_table_work = false;
     bool protection_domain_table_work = false;
     bool oopstorage_work = false;
+    bool deflate_idle_monitors = false;
     JvmtiDeferredEvent jvmti_event;
     {
       // Need state transition ThreadBlockInVM so that this thread
@@ -136,10 +137,14 @@ void ServiceThread::service_thread_entry(JavaThread* jt, TRAPS) {
               (resolved_method_table_work = ResolvedMethodTable::has_work()) |
               (thread_id_table_work = ThreadIdTable::has_work()) |
               (protection_domain_table_work = SystemDictionary::pd_cache_table()->has_work()) |
-              (oopstorage_work = OopStorage::has_cleanup_work_and_reset())
+              (oopstorage_work = OopStorage::has_cleanup_work_and_reset()) |
+              (deflate_idle_monitors = ObjectSynchronizer::is_async_deflation_needed())
              ) == 0) {
         // Wait until notified that there is some work to do.
-        ml.wait();
+        // If AsyncDeflateIdleMonitors, then we wait for
+        // GuaranteedSafepointInterval so that is_async_deflation_needed()
+        // is checked at the same interval.
+        ml.wait(AsyncDeflateIdleMonitors ? GuaranteedSafepointInterval : 0);
       }
 
       if (has_jvmti_events) {
@@ -190,6 +195,10 @@ void ServiceThread::service_thread_entry(JavaThread* jt, TRAPS) {
 
     if (oopstorage_work) {
       cleanup_oopstorages();
+    }
+
+    if (deflate_idle_monitors) {
+      ObjectSynchronizer::deflate_idle_monitors_using_JT();
     }
   }
 }

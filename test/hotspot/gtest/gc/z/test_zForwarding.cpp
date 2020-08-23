@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2016, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -40,10 +40,6 @@ class ZForwardingTest : public Test {
 public:
   // Helper functions
 
-  static bool is_power_of_2(size_t value) {
-    return ::is_power_of_2((intptr_t)value);
-  }
-
   class SequenceToFromIndex : AllStatic {
   public:
     static uintptr_t even(size_t sequence_number) {
@@ -60,7 +56,7 @@ public:
   // Test functions
 
   static void setup(ZForwarding* forwarding) {
-    EXPECT_PRED1(is_power_of_2, forwarding->_entries.length()) << CAPTURE(forwarding->_entries.length());
+    EXPECT_PRED1(is_power_of_2<size_t>, forwarding->_entries.length()) << CAPTURE(forwarding->_entries.length());
   }
 
   static void find_empty(ZForwarding* forwarding) {
@@ -144,7 +140,7 @@ public:
   static void test(void (*function)(ZForwarding*), uint32_t size) {
     // Create page
     const ZVirtualMemory vmem(0, ZPageSizeSmall);
-    const ZPhysicalMemory pmem(ZPhysicalMemorySegment(0, ZPageSizeSmall));
+    const ZPhysicalMemory pmem(ZPhysicalMemorySegment(0, ZPageSizeSmall, true));
     ZPage page(ZPageTypeSmall, vmem, pmem);
 
     page.reset();

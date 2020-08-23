@@ -64,7 +64,7 @@ class Mutex : public CHeapObj<mtSynchronizer> {
        event,
        access         = event          +   1,
        tty            = access         +   2,
-       special        = tty            +   2,
+       special        = tty            +   3,
        suspend_resume = special        +   1,
        oopstorage     = suspend_resume +   2,
        leaf           = oopstorage     +   2,
@@ -81,7 +81,7 @@ class Mutex : public CHeapObj<mtSynchronizer> {
   char _name[MUTEX_NAME_LEN];            // Name of mutex/monitor
 
   // Debugging fields for naming, deadlock detection, etc. (some only used in debug mode)
-#ifdef ASSERT
+#ifndef PRODUCT
   bool    _allow_vm_block;
   int     _rank;                 // rank (to avoid/detect potential deadlocks)
   Mutex*  _next;                 // Used by a Thread to link up owned locks

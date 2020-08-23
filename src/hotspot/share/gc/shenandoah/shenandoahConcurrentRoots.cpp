@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2019, 2020, Red Hat, Inc. All rights reserved.
+ * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 only, as
@@ -27,8 +28,7 @@
 #include "gc/shenandoah/shenandoahHeap.inline.hpp"
 
 bool ShenandoahConcurrentRoots::can_do_concurrent_roots() {
-  // Don't support traversal GC at this moment
-  return !ShenandoahHeap::heap()->is_traversal_mode();
+  return true;
 }
 
 bool ShenandoahConcurrentRoots::should_do_concurrent_roots() {
@@ -37,10 +37,9 @@ bool ShenandoahConcurrentRoots::should_do_concurrent_roots() {
 }
 
 bool ShenandoahConcurrentRoots::can_do_concurrent_class_unloading() {
-#if defined(X86) && !defined(SOLARIS)
+#if (defined(X86) || defined(AARCH64))
   return ShenandoahCodeRootsStyle == 2 &&
-         ClassUnloading &&
-         strcmp(ShenandoahGCMode, "traversal") != 0;
+         ClassUnloading;
 #else
   return false;
 #endif

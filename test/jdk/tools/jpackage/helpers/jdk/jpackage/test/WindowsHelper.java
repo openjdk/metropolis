@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2019, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -26,8 +26,11 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
+import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import jdk.jpackage.test.Functional.ThrowingRunnable;
+import jdk.jpackage.test.PackageTest.PackageHandlers;
 
 public class WindowsHelper {
 
@@ -38,22 +41,96 @@ public class WindowsHelper {
     }
 
     static Path getInstallationDirectory(JPackageCommand cmd) {
-        cmd.verifyIsOfType(PackageType.WINDOWS);
-        Path installDir = Path.of(
-                cmd.getArgumentValue("--install-dir", () -> cmd.name()));
+        return getInstallationRootDirectory(cmd).resolve(
+                getInstallationSubDirectory(cmd));
+    }
+
+    private static Path getInstallationRootDirectory(JPackageCommand cmd) {
         if (isUserLocalInstall(cmd)) {
-            return USER_LOCAL.resolve(installDir);
+            return USER_LOCAL;
         }
-        return PROGRAM_FILES.resolve(installDir);
+        return PROGRAM_FILES;
+    }
+
+    private static Path getInstallationSubDirectory(JPackageCommand cmd) {
+        cmd.verifyIsOfType(PackageType.WINDOWS);
+        return Path.of(cmd.getArgumentValue("--install-dir", () -> cmd.name()));
+    }
+
+    private static void runMsiexecWithRetries(Executor misexec) {
+        Executor.Result result = null;
+        for (int attempt = 0; attempt != 3; ++attempt) {
+            result = misexec.executeWithoutExitCodeCheck();
+            if (result.exitCode == 1618) {
+                // Another installation is already in progress.
+                // Wait a little and try again.
+                ThrowingRunnable.toRunnable(() -> Thread.sleep(3000)).run();
+                continue;
+            }
+            break;
+        }
+
+        result.assertExitCodeIsZero();
+    }
+
+    static PackageHandlers createMsiPackageHandlers() {
+        BiConsumer<JPackageCommand, Boolean> installMsi = (cmd, install) -> {
+            cmd.verifyIsOfType(PackageType.WIN_MSI);
+            runMsiexecWithRetries(Executor.of("msiexec", "/qn", "/norestart",
+                    install ? "/i" : "/x").addArgument(cmd.outputBundle()));
+        };
+
+        PackageHandlers msi = new PackageHandlers();
+        msi.installHandler = cmd -> installMsi.accept(cmd, true);
+        msi.uninstallHandler = cmd -> installMsi.accept(cmd, false);
+        msi.unpackHandler = (cmd, destinationDir) -> {
+            cmd.verifyIsOfType(PackageType.WIN_MSI);
+            final Path unpackBat = destinationDir.resolve("unpack.bat");
+            final Path unpackDir = destinationDir.resolve(
+                    TKit.removeRootFromAbsolutePath(
+                            getInstallationRootDirectory(cmd)));
+            // Put msiexec in .bat file because can't pass value of TARGETDIR
+            // property containing spaces through ProcessBuilder properly.
+            TKit.createTextFile(unpackBat, List.of(String.join(" ", List.of(
+                    "msiexec",
+                    "/a",
+                    String.format("\"%s\"", cmd.outputBundle().normalize()),
+                    "/qn",
+                    String.format("TARGETDIR=\"%s\"",
+                            unpackDir.toAbsolutePath().normalize())))));
+            runMsiexecWithRetries(Executor.of("cmd", "/c", unpackBat.toString()));
+            return destinationDir;
+        };
+        return msi;
+    }
+
+    static PackageHandlers createExePackageHandlers() {
+        PackageHandlers exe = new PackageHandlers();
+        exe.installHandler = cmd -> {
+            cmd.verifyIsOfType(PackageType.WIN_EXE);
+            new Executor().setExecutable(cmd.outputBundle()).execute();
+        };
+
+        return exe;
+    }
+
+    public static String getMsiProperty(JPackageCommand cmd, String propertyName) {
+        cmd.verifyIsOfType(PackageType.WIN_MSI);
+        return Executor.of("cscript.exe", "//Nologo")
+        .addArgument(TKit.TEST_SRC_ROOT.resolve("resources/query-msi-property.js"))
+        .addArgument(cmd.outputBundle())
+        .addArgument(propertyName)
+        .dumpOutput()
+        .executeAndGetOutput().stream().collect(Collectors.joining("\n"));
     }
 
     private static boolean isUserLocalInstall(JPackageCommand cmd) {
         return cmd.hasArgument("--win-per-user-install");
     }
 
-    static class AppVerifier {
+    static class DesktopIntegrationVerifier {
 
-        AppVerifier(JPackageCommand cmd) {
+        DesktopIntegrationVerifier(JPackageCommand cmd) {
             cmd.verifyIsOfType(PackageType.WINDOWS);
             this.cmd = cmd;
             verifyStartMenuShortcut();
@@ -201,16 +278,15 @@ public class WindowsHelper {
     }
 
     private static String queryRegistryValue(String keyPath, String valueName) {
-        Executor.Result status = new Executor()
-                .setExecutable("reg")
+        var status = Executor.of("reg", "query", keyPath, "/v", valueName)
                 .saveOutput()
-                .addArguments("query", keyPath, "/v", valueName)
-                .execute();
+                .executeWithoutExitCodeCheck();
         if (status.exitCode == 1) {
             // Should be the case of no such registry value or key
             String lookupString = "ERROR: The system was unable to find the specified registry key or value.";
-            status.getOutput().stream().filter(line -> line.equals(lookupString)).findFirst().orElseThrow(
-                    () -> new RuntimeException(String.format(
+            TKit.assertTextStream(lookupString)
+                    .predicate(String::equals)
+                    .orElseThrow(() -> new RuntimeException(String.format(
                             "Failed to find [%s] string in the output",
                             lookupString)));
             TKit.trace(String.format(

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -29,6 +29,7 @@
 #include "oops/oop.inline.hpp"
 #include "runtime/arguments.hpp"
 #include "runtime/os.inline.hpp"
+#include "runtime/orderAccess.hpp"
 #include "runtime/vm_version.hpp"
 #include "utilities/defaultStream.hpp"
 #include "utilities/macros.hpp"
@@ -368,10 +369,16 @@ void stringStream::reset() {
   zero_terminate();
 }
 
-char* stringStream::as_string() const {
-  char* copy = NEW_RESOURCE_ARRAY(char, buffer_pos + 1);
+char* stringStream::as_string(bool c_heap) const {
+  char* copy = c_heap ?
+    NEW_C_HEAP_ARRAY(char, buffer_pos + 1, mtInternal) : NEW_RESOURCE_ARRAY(char, buffer_pos + 1);
   strncpy(copy, buffer, buffer_pos);
   copy[buffer_pos] = 0;  // terminating null
+  if (c_heap) {
+    // Need to ensure our content is written to memory before we return
+    // the pointer to it.
+    OrderAccess::storestore();
+  }
   return copy;
 }
 
@@ -531,10 +538,10 @@ fileStream::fileStream(const char* file_name, const char* opentype) {
 
 void fileStream::write(const char* s, size_t len) {
   if (_file != NULL)  {
-    // Make an unused local variable to avoid warning from gcc 4.x compiler.
+    // Make an unused local variable to avoid warning from gcc compiler.
     size_t count = fwrite(s, 1, len, _file);
+    update_position(s, len);
   }
-  update_position(s, len);
 }
 
 long fileStream::fileSize() {
@@ -551,9 +558,12 @@ long fileStream::fileSize() {
 }
 
 char* fileStream::readln(char *data, int count ) {
-  char * ret = ::fgets(data, count, _file);
-  //Get rid of annoying \n char
-  data[::strlen(data)-1] = '\0';
+  char * ret = NULL;
+  if (_file != NULL) {
+    ret = ::fgets(data, count, _file);
+    //Get rid of annoying \n char
+    data[::strlen(data)-1] = '\0';
+  }
   return ret;
 }
 
@@ -565,15 +575,17 @@ fileStream::~fileStream() {
 }
 
 void fileStream::flush() {
-  fflush(_file);
+  if (_file != NULL) {
+    fflush(_file);
+  }
 }
 
 void fdStream::write(const char* s, size_t len) {
   if (_fd != -1) {
-    // Make an unused local variable to avoid warning from gcc 4.x compiler.
+    // Make an unused local variable to avoid warning from gcc compiler.
     size_t count = ::write(_fd, s, (int)len);
+    update_position(s, len);
   }
-  update_position(s, len);
 }
 
 defaultStream* defaultStream::instance = NULL;
@@ -659,9 +671,10 @@ void defaultStream::start_log() {
     // Write XML header.
     xs->print_cr("<?xml version='1.0' encoding='UTF-8'?>");
     // (For now, don't bother to issue a DTD for this private format.)
+
+    // Calculate the start time of the log as ms since the epoch: this is
+    // the current time in ms minus the uptime in ms.
     jlong time_ms = os::javaTimeMillis() - tty->time_stamp().milliseconds();
-    // %%% Should be: jlong time_ms = os::start_time_milliseconds(), if
-    // we ever get round to introduce that method on the os class
     xs->head("hotspot_log version='%d %d'"
              " process='%d' time_ms='" INT64_FORMAT "'",
              LOG_MAJOR_VERSION, LOG_MINOR_VERSION,
@@ -1033,7 +1046,7 @@ bufferedStream::~bufferedStream() {
 
 #ifndef PRODUCT
 
-#if defined(SOLARIS) || defined(LINUX) || defined(AIX) || defined(_ALLBSD_SOURCE)
+#if defined(LINUX) || defined(AIX) || defined(_ALLBSD_SOURCE)
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>

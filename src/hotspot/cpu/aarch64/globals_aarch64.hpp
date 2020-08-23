@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2000, 2020, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2015, 2019, Red Hat Inc. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -81,14 +81,10 @@ define_pd_global(intx, InlineSmallCode,          1000);
                    experimental, \
                    notproduct, \
                    range, \
-                   constraint, \
-                   writeable) \
+                   constraint) \
                                                                         \
   product(bool, NearCpool, true,                                        \
          "constant pool is close to instructions")                      \
-                                                                        \
-  product(bool, UseBarriersForVolatile, false,                          \
-          "Use memory barriers to implement volatile accesses")         \
   product(bool, UseNeon, false,                                         \
           "Use Neon for CRC32 computation")                             \
   product(bool, UseCRC32, false,                                        \
