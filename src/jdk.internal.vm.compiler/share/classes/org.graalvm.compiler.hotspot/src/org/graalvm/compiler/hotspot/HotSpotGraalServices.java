@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -24,12 +24,17 @@
 
 package org.graalvm.compiler.hotspot;
 
+import java.util.Objects;
+
+import jdk.vm.ci.hotspot.HotSpotJVMCIRuntime;
 import jdk.vm.ci.hotspot.HotSpotMetaData;
+import jdk.vm.ci.hotspot.HotSpotObjectConstantScope;
 import jdk.vm.ci.hotspot.HotSpotSpeculationLog;
 import jdk.vm.ci.meta.SpeculationLog;
+import jdk.vm.ci.services.Services;
 
 /**
- * JDK 13 version of {@code HotSpotGraalServices}.
+ * JDK 15 version of {@code HotSpotGraalServices}.
  */
 public class HotSpotGraalServices {
 
@@ -42,16 +47,21 @@ public class HotSpotGraalServices {
     }
 
     public static CompilationContext enterGlobalCompilationContext() {
-        return null;
+        HotSpotObjectConstantScope impl = HotSpotObjectConstantScope.enterGlobalScope();
+        return impl == null ? null : new CompilationContext(impl);
     }
 
-    @SuppressWarnings("unused")
     public static CompilationContext openLocalCompilationContext(Object description) {
-        return null;
+        HotSpotObjectConstantScope impl = HotSpotObjectConstantScope.openLocalScope(Objects.requireNonNull(description));
+        return impl == null ? null : new CompilationContext(impl);
     }
 
     public static void exit(int status) {
-        System.exit(status);
+        if (Services.IS_IN_NATIVE_IMAGE) {
+            HotSpotJVMCIRuntime.runtime().exitHotSpot(status);
+        } else {
+            System.exit(status);
+        }
     }
 
     public static SpeculationLog newHotSpotSpeculationLog(long cachedFailedSpeculationsAddress) {

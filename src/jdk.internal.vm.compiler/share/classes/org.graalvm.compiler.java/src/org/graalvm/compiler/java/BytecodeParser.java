@@ -282,7 +282,6 @@ import org.graalvm.compiler.bytecode.BytecodeSwitch;
 import org.graalvm.compiler.bytecode.BytecodeTableSwitch;
 import org.graalvm.compiler.bytecode.Bytecodes;
 import org.graalvm.compiler.bytecode.Bytes;
-import org.graalvm.compiler.bytecode.ResolvedJavaMethodBytecode;
 import org.graalvm.compiler.bytecode.ResolvedJavaMethodBytecodeProvider;
 import org.graalvm.compiler.core.common.GraalOptions;
 import org.graalvm.compiler.core.common.PermanentBailoutException;
@@ -349,6 +348,7 @@ import org.graalvm.compiler.nodes.MergeNode;
 import org.graalvm.compiler.nodes.NodeView;
 import org.graalvm.compiler.nodes.ParameterNode;
 import org.graalvm.compiler.nodes.PiNode;
+import org.graalvm.compiler.nodes.PluginReplacementNode;
 import org.graalvm.compiler.nodes.ReturnNode;
 import org.graalvm.compiler.nodes.StartNode;
 import org.graalvm.compiler.nodes.StateSplit;
@@ -396,6 +396,7 @@ import org.graalvm.compiler.nodes.extended.LoadHubNode;
 import org.graalvm.compiler.nodes.extended.MembarNode;
 import org.graalvm.compiler.nodes.extended.StateSplitProxyNode;
 import org.graalvm.compiler.nodes.graphbuilderconf.ClassInitializationPlugin;
+import org.graalvm.compiler.nodes.graphbuilderconf.GeneratedInvocationPlugin;
 import org.graalvm.compiler.nodes.graphbuilderconf.GraphBuilderConfiguration;
 import org.graalvm.compiler.nodes.graphbuilderconf.GraphBuilderConfiguration.BytecodeExceptionMode;
 import org.graalvm.compiler.nodes.graphbuilderconf.GraphBuilderContext;
@@ -1164,34 +1165,7 @@ public class BytecodeParser implements GraphBuilderContext {
         if (intrinsicContext.isPostParseInlined()) {
             stateAfterStart = graph.add(new FrameState(BytecodeFrame.BEFORE_BCI));
         } else {
-            ResolvedJavaMethod original = intrinsicContext.getOriginalMethod();
-            ValueNode[] locals;
-            if (original.getMaxLocals() == frameState.localsSize() || original.isNative()) {
-                locals = new ValueNode[original.getMaxLocals()];
-                for (int i = 0; i < locals.length; i++) {
-                    ValueNode node = frameState.locals[i];
-                    if (node == FrameState.TWO_SLOT_MARKER) {
-                        node = null;
-                    }
-                    locals[i] = node;
-                }
-            } else {
-                locals = new ValueNode[original.getMaxLocals()];
-                int parameterCount = original.getSignature().getParameterCount(!original.isStatic());
-                for (int i = 0; i < parameterCount; i++) {
-                    ValueNode param = frameState.locals[i];
-                    if (param == FrameState.TWO_SLOT_MARKER) {
-                        param = null;
-                    }
-                    locals[i] = param;
-                    assert param == null || param instanceof ParameterNode || param.isConstant();
-                }
-            }
-            ValueNode[] stack = {};
-            int stackSize = 0;
-            ValueNode[] locks = {};
-            List<MonitorIdNode> monitorIds = Collections.emptyList();
-            stateAfterStart = graph.add(new FrameState(null, new ResolvedJavaMethodBytecode(original), 0, locals, stack, stackSize, locks, monitorIds, false, false));
+            stateAfterStart = frameState.createInitialIntrinsicFrameState(intrinsicContext.getOriginalMethod());
         }
         return stateAfterStart;
     }
@@ -2178,7 +2152,22 @@ public class BytecodeParser implements GraphBuilderContext {
         }
     }
 
-    @SuppressWarnings("try")
+    @Override
+    public void replacePlugin(GeneratedInvocationPlugin plugin, ResolvedJavaMethod targetMethod, ValueNode[] args, PluginReplacementNode.ReplacementFunction replacementFunction) {
+        assert replacementFunction != null;
+        JavaType returnType = maybeEagerlyResolve(targetMethod.getSignature().getReturnType(method.getDeclaringClass()), targetMethod.getDeclaringClass());
+        StampPair returnStamp = getReplacements().getGraphBuilderPlugins().getOverridingStamp(this, returnType, false);
+        if (returnStamp == null) {
+            returnStamp = StampFactory.forDeclaredType(getAssumptions(), returnType, false);
+        }
+        ValueNode node = new PluginReplacementNode(returnStamp.getTrustedStamp(), args, replacementFunction, plugin.getClass().getSimpleName());
+        if (returnType.getJavaKind() == JavaKind.Void) {
+            add(node);
+        } else {
+            addPush(returnType.getJavaKind(), node);
+        }
+    }
+
     protected boolean tryInvocationPlugin(InvokeKind invokeKind, ValueNode[] args, ResolvedJavaMethod targetMethod, JavaKind resultType) {
         InvocationPlugin plugin = graphBuilderConfig.getPlugins().getInvocationPlugins().lookupInvocation(targetMethod);
         if (plugin != null) {
@@ -2188,17 +2177,25 @@ public class BytecodeParser implements GraphBuilderContext {
                 return false;
             }
 
-            InvocationPluginReceiver pluginReceiver = invocationPluginReceiver.init(targetMethod, args);
-            assert invokeKind.isDirect() : "Cannot apply invocation plugin on an indirect call site.";
+            if (applyInvocationPlugin(invokeKind, args, targetMethod, resultType, plugin)) {
+                return !plugin.isDecorator();
+            }
+        }
+        return false;
+    }
 
-            InvocationPluginAssertions assertions = Assertions.assertionsEnabled() ? new InvocationPluginAssertions(plugin, args, targetMethod, resultType) : null;
-            try (DebugCloseable context = openNodeContext(targetMethod)) {
-                if (plugin.execute(this, targetMethod, pluginReceiver, args)) {
-                    assert assertions.check(true);
-                    return !plugin.isDecorator();
-                } else {
-                    assert assertions.check(false);
-                }
+    @SuppressWarnings("try")
+    protected boolean applyInvocationPlugin(InvokeKind invokeKind, ValueNode[] args, ResolvedJavaMethod targetMethod, JavaKind resultType, InvocationPlugin plugin) {
+        InvocationPluginReceiver pluginReceiver = invocationPluginReceiver.init(targetMethod, args);
+        assert invokeKind.isDirect() : "Cannot apply invocation plugin on an indirect call site.";
+
+        InvocationPluginAssertions assertions = Assertions.assertionsEnabled() ? new InvocationPluginAssertions(plugin, args, targetMethod, resultType) : null;
+        try (DebugCloseable context = openNodeContext(targetMethod)) {
+            if (plugin.execute(this, targetMethod, pluginReceiver, args)) {
+                assert assertions.check(true);
+                return true;
+            } else {
+                assert assertions.check(false);
             }
         }
         return false;

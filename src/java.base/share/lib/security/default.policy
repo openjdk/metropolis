@@ -169,6 +169,7 @@ grant codeBase "jrt:/jdk.internal.vm.compiler.management" {
     permission java.lang.RuntimePermission "accessClassInPackage.org.graalvm.compiler.options";
     permission java.lang.RuntimePermission "accessClassInPackage.org.graalvm.compiler.phases.common.jmx";
     permission java.lang.RuntimePermission "accessClassInPackage.org.graalvm.compiler.serviceprovider";
+    permission java.lang.RuntimePermission "accessClassInPackage.org.graalvm.util";
 };
 
 grant codeBase "jrt:/jdk.jsobject" {

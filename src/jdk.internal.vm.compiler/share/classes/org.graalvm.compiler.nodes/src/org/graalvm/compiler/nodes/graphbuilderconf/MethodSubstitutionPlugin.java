@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2015, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -106,12 +106,6 @@ public final class MethodSubstitutionPlugin implements InvocationPlugin {
         this.substituteName = substituteName;
         this.parameters = parameters;
         this.originalIsStatic = parameters.length == 0 || parameters[0] != InvocationPlugin.Receiver.class;
-    }
-
-    @Override
-    public boolean inlineOnly() {
-        // Conservatively assume MacroNodes may be used in a substitution
-        return true;
     }
 
     /**

@@ -447,6 +447,7 @@ jdk.internal.vm.compiler_JAVAC_FLAGS += -parameters -XDstringConcat=inline \
 
 jdk.internal.vm.compiler_EXCLUDES += \
     jdk.internal.vm.compiler.collections.test \
+    jdk.internal.vm.compiler.libgraal.jni.processor \
     jdk.internal.vm.compiler.nativeimage.test \
     jdk.tools.jaotc.test \
     org.graalvm.compiler.api.directives.test \
@@ -478,6 +479,7 @@ jdk.internal.vm.compiler_EXCLUDES += \
     org.graalvm.compiler.options.test \
     org.graalvm.compiler.phases.common.test \
     org.graalvm.compiler.processor \
+    org.graalvm.compiler.replacements.jdk10.test \
     org.graalvm.compiler.replacements.jdk12.test \
     org.graalvm.compiler.replacements.jdk9.test \
     org.graalvm.compiler.replacements.processor \

@@ -1,0 +1,2 @@
+jdk.internal.vm.compiler.libgraal.jni.processor.JNIFromLibGraalProcessor
+jdk.internal.vm.compiler.libgraal.jni.processor.FromLibGraalEntryPointsResolverProcessor

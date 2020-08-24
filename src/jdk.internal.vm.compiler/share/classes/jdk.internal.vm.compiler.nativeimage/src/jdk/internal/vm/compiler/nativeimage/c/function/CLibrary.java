@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2013, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -68,4 +68,11 @@ public @interface CLibrary {
      * @since 19.1.0
      */
     boolean requireStatic() default false;
+
+    /**
+     * Specifies the name of the libraries this library depends on.
+     *
+     * @since 20.1.0
+     */
+    String[] dependsOn() default {};
 }

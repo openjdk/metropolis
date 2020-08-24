@@ -38,7 +38,7 @@ module jdk.internal.vm.compiler {
     uses org.graalvm.compiler.hotspot.HotSpotBackendFactory;
     uses org.graalvm.compiler.hotspot.HotSpotCodeCacheListener;
     uses org.graalvm.compiler.hotspot.HotSpotGraalManagementRegistration;
-    uses org.graalvm.compiler.nodes.graphbuilderconf.NodeIntrinsicPluginFactory;
+    uses org.graalvm.compiler.nodes.graphbuilderconf.GeneratedPluginFactory;
     uses org.graalvm.compiler.phases.common.jmx.HotSpotMBeanOperationProvider;
     uses org.graalvm.compiler.serviceprovider.JMXService;
 
@@ -83,6 +83,8 @@ module jdk.internal.vm.compiler {
     exports org.graalvm.compiler.serviceprovider        to
         jdk.aot,
         jdk.internal.vm.compiler.management;
+    exports org.graalvm.util                            to jdk.internal.vm.compiler.management;
     exports org.graalvm.compiler.word                   to jdk.aot;
     exports jdk.internal.vm.compiler.word               to jdk.aot;
+    exports jdk.internal.vm.compiler.libgraal           to jdk.internal.vm.compiler.management;
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2017, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -40,6 +40,9 @@
 
 package jdk.internal.vm.compiler.nativeimage;
 
+import java.io.IOException;
+
+import jdk.internal.vm.compiler.nativeimage.impl.HeapDumpSupport;
 import jdk.internal.vm.compiler.nativeimage.impl.VMRuntimeSupport;
 
 /**
@@ -70,6 +73,20 @@ public final class VMRuntime {
      */
     public static void shutdown() {
         ImageSingletons.lookup(VMRuntimeSupport.class).shutdown();
+    }
+
+    /**
+     * Dumps the heap to the {@code outputFile} file in the same format as the hprof heap dump.
+     *
+     * @throws UnsupportedOperationException if this operation is not supported.
+     *
+     * @since 20.1
+     */
+    public static void dumpHeap(String outputFile, boolean live) throws IOException {
+        if (!ImageSingletons.contains(HeapDumpSupport.class)) {
+            throw new UnsupportedOperationException();
+        }
+        ImageSingletons.lookup(HeapDumpSupport.class).dumpHeap(outputFile, live);
     }
 
     private VMRuntime() {

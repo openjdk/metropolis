@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2018, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -39,7 +39,7 @@ import jdk.internal.vm.compiler.libgraal.jni.JNI.JObject;
 
 /**
  * Encapsulates a JNI handle to an object in the HotSpot heap. Depending on which constructor is
- * used, the handle is either local to a {@link HotSpotToSVMScope} and thus invalid once the scope
+ * used, the handle is either local to a {@link JNILibGraalScope} and thus invalid once the scope
  * exits or a global JNI handle that is only released sometime after the {@link HSObject} dies.
  */
 public abstract class HSObject {
@@ -56,9 +56,9 @@ public abstract class HSObject {
 
     /**
      * Link to next the next scope local object. The head of the list is in
-     * {@link HotSpotToSVMScope#locals}. The handle of a scope local object is only valid for the
-     * lifetime of a {@link HotSpotToSVMScope}. A self-reference (i.e. {@code this.next == this})
-     * denotes an object whose {@link HotSpotToSVMScope} has closed.
+     * {@link JNILibGraalScope#locals}. The handle of a scope local object is only valid for the
+     * lifetime of a {@link JNILibGraalScope}. A self-reference (i.e. {@code this.next == this})
+     * denotes an object whose {@link JNILibGraalScope} has closed.
      *
      * This field is {@code null} for a non-scope local object.
      */
@@ -83,7 +83,7 @@ public abstract class HSObject {
      * Once {@code scope.close()} is called, any attempt to {@linkplain #getHandle() use} the handle
      * will result in an {@link IllegalArgumentException}.
      */
-    protected <T extends Enum<T>> HSObject(HotSpotToSVMScope<T> scope, JObject handle) {
+    protected <T extends Enum<T>> HSObject(JNILibGraalScope<T> scope, JObject handle) {
         this.handle = handle;
         next = scope.locals;
         scope.locals = this;

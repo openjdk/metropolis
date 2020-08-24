@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2020, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2019, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -68,7 +68,6 @@ import org.graalvm.compiler.phases.common.inlining.info.elem.Inlineable;
 import org.graalvm.compiler.phases.common.inlining.info.elem.InlineableGraph;
 import org.graalvm.compiler.phases.common.inlining.policy.InliningPolicy;
 import org.graalvm.compiler.phases.tiers.HighTierContext;
-import org.graalvm.compiler.phases.util.Providers;
 
 import jdk.vm.ci.code.BailoutException;
 import jdk.vm.ci.meta.Assumptions.AssumptionResult;
@@ -414,7 +413,7 @@ public class InliningData {
             try (DebugContext.Scope scope = debug.scope("doInline", callerGraph)) {
                 EconomicSet<Node> canonicalizedNodes = EconomicSet.create(Equivalence.IDENTITY);
                 canonicalizedNodes.addAll(calleeInfo.invoke().asNode().usages());
-                EconomicSet<Node> parameterUsages = calleeInfo.inline(new Providers(context), reason);
+                EconomicSet<Node> parameterUsages = calleeInfo.inline(context.getProviders(), reason);
                 canonicalizedNodes.addAll(parameterUsages);
                 counterInliningRuns.increment(debug);
                 debug.dump(DebugContext.DETAILED_LEVEL, callerGraph, "after %s", calleeInfo);
@@ -470,7 +469,7 @@ public class InliningData {
         }
 
         if (context.getOptimisticOptimizations().devirtualizeInvokes(calleeInfo.graph().getOptions())) {
-            calleeInfo.tryToDevirtualizeInvoke(new Providers(context));
+            calleeInfo.tryToDevirtualizeInvoke(context.getProviders());
         }
 
         return false;
@@ -498,7 +497,7 @@ public class InliningData {
      * <p>
      * The {@link InlineInfo} used to get things rolling is kept around in the
      * {@link MethodInvocation}, it will be needed in case of inlining, see
-     * {@link InlineInfo#inline(Providers, String)}
+     * {@link InlineInfo#inline(org.graalvm.compiler.nodes.spi.CoreProviders, String)}
      * </p>
      */
     private void processNextInvoke() {

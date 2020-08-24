@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2013, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -50,25 +50,5 @@ public interface InternalPlatform {
      * @since 19.2
      */
     interface PLATFORM_JNI extends Platform {
-    }
-
-    /**
-     * Temporary platform used to mark classes or methods that are used for LINUX and
-     * LINUX_SUBSTITUTION platforms.
-     *
-     * @since 19.0
-     */
-    interface LINUX_JNI_AND_SUBSTITUTIONS extends Platform {
-
-    }
-
-    /**
-     * Temporary platform used to mark classes or methods that are used for DARWIN (MacOS) and
-     * DARWIN_SUBSTITUTION platforms.
-     *
-     * @since 19.0
-     */
-    interface DARWIN_JNI_AND_SUBSTITUTIONS extends Platform {
-
     }
 }

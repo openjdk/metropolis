@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2018, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -22,25 +22,18 @@
  */
 
 
-package org.graalvm.compiler.nodes.graphbuilderconf;
+package jdk.internal.vm.compiler.libgraal.jni.annotation;
 
-import org.graalvm.compiler.core.common.type.Stamp;
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
 
-public interface NodeIntrinsicPluginFactory {
-
-    public interface InjectionProvider {
-
-        <T> T getInjectedArgument(Class<T> type);
-
-        /**
-         * Gets a stamp denoting a given type and non-nullness property.
-         *
-         * @param type the type the returned stamp represents
-         * @param nonNull specifies if the returned stamp denotes a value that is guaranteed to be
-         *            non-null
-         */
-        Stamp getInjectedStamp(Class<?> type, boolean nonNull);
-    }
-
-    void registerPlugins(InvocationPlugins plugins, InjectionProvider injection);
+/**
+ * Container for repeated {@link JNIFromLibGraal} annotations.
+ */
+@Retention(RetentionPolicy.RUNTIME)
+@Target(ElementType.METHOD)
+public @interface JNIFromLibGraalRepeated {
+    JNIFromLibGraal[] value();
 }

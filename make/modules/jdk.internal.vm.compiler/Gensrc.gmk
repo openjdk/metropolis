@@ -53,6 +53,7 @@ PROC_SRC_SUBDIRS := \
     org.graalvm.compiler.phases.common \
     org.graalvm.compiler.printer \
     org.graalvm.compiler.virtual \
+    jdk.internal.vm.compiler.libgraal.jni \
     #
 
 PROC_SRC_DIRS := $(patsubst %, $(SRC_DIR)/%/src, $(PROC_SRC_SUBDIRS))
@@ -68,6 +69,7 @@ PROCESSOR_JARS := \
     $(BUILDTOOLS_OUTPUTDIR)/jdk.vm.compiler.options.processor.jar \
     $(BUILDTOOLS_OUTPUTDIR)/jdk.vm.compiler.replacements.verifier.jar \
     $(BUILDTOOLS_OUTPUTDIR)/jdk.vm.compiler.serviceprovider.processor.jar \
+    $(BUILDTOOLS_OUTPUTDIR)/jdk.vm.compiler.libgraal.jni.processor.jar \
     #
 PROCESSOR_PATH := $(call PathList, $(PROCESSOR_JARS))
 

@@ -30,12 +30,14 @@ import static org.graalvm.compiler.nodeinfo.NodeSize.SIZE_1;
 import org.graalvm.compiler.core.common.calc.CanonicalCondition;
 import org.graalvm.compiler.core.common.type.Stamp;
 import org.graalvm.compiler.graph.Node;
+import org.graalvm.compiler.graph.Node.NodeIntrinsicFactory;
 import org.graalvm.compiler.graph.NodeClass;
 import org.graalvm.compiler.graph.spi.Canonicalizable;
 import org.graalvm.compiler.graph.spi.CanonicalizerTool;
 import org.graalvm.compiler.hotspot.nodes.type.KlassPointerStamp;
 import org.graalvm.compiler.hotspot.word.KlassPointer;
 import org.graalvm.compiler.nodeinfo.NodeInfo;
+import org.graalvm.compiler.nodeinfo.Verbosity;
 import org.graalvm.compiler.nodes.ConstantNode;
 import org.graalvm.compiler.nodes.NodeView;
 import org.graalvm.compiler.nodes.PiNode;
@@ -56,7 +58,6 @@ import jdk.vm.ci.meta.ConstantReflectionProvider;
 import jdk.vm.ci.meta.JavaConstant;
 import jdk.vm.ci.meta.JavaKind;
 import jdk.vm.ci.meta.MetaAccessProvider;
-import jdk.vm.ci.meta.ResolvedJavaMethod;
 import jdk.vm.ci.meta.ResolvedJavaType;
 
 /**
@@ -66,6 +67,7 @@ import jdk.vm.ci.meta.ResolvedJavaType;
  * {@link ReadNode#canonicalizeRead(ValueNode, AddressNode, LocationIdentity, CanonicalizerTool)}.
  */
 @NodeInfo(cycles = CYCLES_1, size = SIZE_1)
+@NodeIntrinsicFactory
 public final class ClassGetHubNode extends FloatingNode implements Lowerable, Canonicalizable, ConvertNode {
     public static final NodeClass<ClassGetHubNode> TYPE = NodeClass.create(ClassGetHubNode.class);
     @Input protected ValueNode clazz;
@@ -79,8 +81,7 @@ public final class ClassGetHubNode extends FloatingNode implements Lowerable, Ca
         return canonical(null, metaAccess, constantReflection, allUsagesAvailable, KlassPointerStamp.klass(), clazz);
     }
 
-    @SuppressWarnings("unused")
-    public static boolean intrinsify(GraphBuilderContext b, ResolvedJavaMethod method, ValueNode clazz) {
+    public static boolean intrinsify(GraphBuilderContext b, ValueNode clazz) {
         ValueNode clazzValue = create(clazz, b.getMetaAccess(), b.getConstantReflection(), false);
         b.push(JavaKind.Object, b.append(clazzValue));
         return true;
@@ -94,7 +95,8 @@ public final class ClassGetHubNode extends FloatingNode implements Lowerable, Ca
         } else {
             if (clazz.isConstant() && !clazz.isNullConstant()) {
                 if (metaAccess != null) {
-                    ResolvedJavaType exactType = constantReflection.asJavaType(clazz.asJavaConstant());
+                    ResolvedJavaType exactType = constantReflection.asJavaType(clazz.asConstant());
+                    assert exactType != null : classGetHubNode.toString(Verbosity.Debugger);
                     if (exactType.isPrimitive()) {
                         return ConstantNode.forConstant(stamp, JavaConstant.NULL_POINTER, metaAccess);
                     } else {

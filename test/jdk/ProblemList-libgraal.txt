@@ -45,8 +45,14 @@ com/sun/crypto/provider/Cipher/Blowfish/TestCipherBlowfish.java         8239960 
 
 com/sun/crypto/provider/Cipher/CTR/CounterMode.java                     8239958   generic-all
 com/sun/crypto/provider/Cipher/DES/TestCipherDES.java                   8239958   generic-all
+com/sun/crypto/provider/Cipher/PBE/PBEKeyTest.java                      8239958   generic-all
 com/sun/crypto/provider/Cipher/PBE/PBEParametersTest.java               8239958   generic-all
+com/sun/crypto/provider/Cipher/PBE/PBESealedObject.java                 8239958   generic-all
 com/sun/crypto/provider/Cipher/PBE/PKCS12Cipher.java                    8239958   generic-all
+com/sun/crypto/provider/Cipher/PBE/PKCS12CipherKAT.java                 8239958   generic-all
+com/sun/crypto/provider/Cipher/PBE/PKCS12Oid.java                       8239958   generic-all
+com/sun/crypto/provider/Cipher/PBE/TestCipherPBE.java                   8239958   generic-all
+com/sun/crypto/provider/Cipher/PBE/TestCipherPBECons.java               8239958   generic-all
 com/sun/crypto/provider/Cipher/PBE/TestCipherKeyWrapperPBEKey.java      8239958   generic-all
 com/sun/crypto/provider/Cipher/TextLength/TestCipherTextLength.java     8239958   generic-all
 
